@@ -3,6 +3,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import requests
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
@@ -135,6 +136,50 @@ def export_csv():
             headers={'Content-Disposition': 'attachment;filename=transactions.csv'}
         )
         return response
+@app.route('/get_rate/<from_curr>/<to_curr>')
+def get_live_rate(from_curr, to_curr):
+    try:
+        # Free API - updates every 60 seconds
+        url = f"https://api.exchangerate-api.com/v4/latest/{from_curr}"
+        response = requests.get(url)
+        data = response.json()
+        rate = data['rates'][to_curr]
+        return str(round(rate, 4))
+    except:
+        return "0.85"  # Fallback
+
+
+@app.route('/charts')
+def charts():
+    from datetime import datetime, timedelta
+    import json
+
+    # Get last 30 days data
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    transactions = Transaction.query.filter(Transaction.date >= thirty_days_ago).order_by(Transaction.date).all()
+
+    # Calculate daily balances
+    daily_balances = {}
+    for tx in transactions:
+        date_str = tx.date.strftime('%Y-%m-%d')
+        if date_str not in daily_balances:
+            daily_balances[date_str] = {'USD': 0, 'EUR': 0, 'GBP': 0, 'IRR': 0, 'CAD': 0}
+
+        daily_balances[date_str][tx.from_currency] -= tx.from_amount
+        daily_balances[date_str][tx.to_currency] += tx.to_amount
+
+    # Format for chart
+    dates = sorted(daily_balances.keys())
+    usd_data = [daily_balances[date].get('USD', 0) for date in dates]
+    eur_data = [daily_balances[date].get('EUR', 0) for date in dates]
+
+    chart_data = {
+        'dates': dates,
+        'usd': usd_data,
+        'eur': eur_data
+    }
+
+    return render_template('charts.html', chart_data=json.dumps(chart_data))
 
 if __name__ == '__main__':
     app.run(debug=True)

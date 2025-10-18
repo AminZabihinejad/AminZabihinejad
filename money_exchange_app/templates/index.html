@@ -87,7 +87,8 @@
                     <option value="IRR">IRR</option>
                     <option value="CAD">CAD</option>
                 </select>
-                <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" required>
+                <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required>
+		<button type="button" onclick="getLiveRate()" style="padding:10px; background:#2196F3; color:white; border:none; border-radius:4px; margin-left:5px;">🌍 LIVE RATE</button>
             </div>
             <textarea name="notes" placeholder="Customer name or notes..."></textarea>
             <input type="submit" value="💸 ADD TRANSACTION" style="width:100%; padding:15px; font-size:18px; background:#4CAF50; color:white; border:none; border-radius:5px;">
@@ -95,7 +96,8 @@
 
         <div class="links">
             <a href="{{ url_for('transactions') }}" style="font-size:18px;">📋 History</a> | 
-            <a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 CSV</a>
+		<a href="{{ url_for('charts') }}" style="font-size:18px; color: blue;">📊 CHARTS</a> | 
+		<a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 CSV</a>
         </div>
     </div>
 
@@ -108,5 +110,22 @@
         alert(`You will receive: ${toAmt.toFixed(2)} ${toCurr}`);
     };
     </script>
+
+<script>
+function getLiveRate() {
+    let fromCurr = document.querySelector('[name="from_currency"]').value;
+    let toCurr = document.querySelector('[name="to_currency"]').value;
+    if (!fromCurr || !toCurr) {
+        alert('Please select FROM and TO currencies first!');
+        return;
+    }
+    fetch(`/get_rate/${fromCurr}/${toCurr}`)
+        .then(response => response.text())
+        .then(rate => {
+            document.querySelector('#rate').value = rate;
+            alert(`✅ LIVE RATE: 1 ${fromCurr} = ${rate} ${toCurr}`);
+        });
+}
+</script>
 </body>
 </html>
