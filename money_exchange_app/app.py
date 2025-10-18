@@ -36,3 +36,36 @@ def get_balances():
     return balances
 
 # Routes below...
+
+# ... (continue from above)
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        # Add new transaction from form data
+        from_curr = request.form['from_currency']
+        to_curr = request.form['to_currency']
+        from_amt = float(request.form['from_amount'])
+        rate = float(request.form['exchange_rate'])
+        to_amt = from_amt * rate  # Calculate to_amount
+        notes = request.form.get('notes')
+
+        new_tx = Transaction(
+            from_currency=from_curr,
+            to_currency=to_curr,
+            from_amount=from_amt,
+            to_amount=to_amt,
+            exchange_rate=rate,
+            notes=notes
+        )
+        db.session.add(new_tx)
+        db.session.commit()
+        return redirect(url_for('index'))
+
+    balances = get_balances()
+    return render_template('index.html', balances=balances)
+
+@app.route('/transactions')
+def transactions():
+    all_tx = Transaction.query.order_by(Transaction.date.desc()).all()
+    return render_template('transactions.html', transactions=all_tx)

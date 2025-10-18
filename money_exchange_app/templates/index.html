@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Money Exchange Dashboard</title>
+</head>
+<body>
+    <h1>Current Balances</h1>
+    <ul>
+        {% for currency, amount in balances.items() %}
+            <li>{{ currency }}: {{ amount|round(2) }}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Add Transaction</h2>
+    <form method="POST">
+    <table>
+        <tr>
+            <td>From:</td>
+            <td>
+                <select name="from_currency" required style="width:100px">
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="IRR">IRR</option>
+                    <option value="CAD">CAD</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <td>To:</td>
+            <td>
+                <select name="to_currency" required style="width:100px">
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="IRR">IRR</option>
+                    <option value="CAD">CAD</option>
+                </select>
+            </td>
+        </tr>
+        <tr><td>Amount:</td><td><input type="number" name="from_amount" step="0.01" placeholder="100.00" required style="width:120px"></td></tr>
+        <tr><td>Rate:</td><td><input type="number" name="exchange_rate" step="0.001" placeholder="0.85" required style="width:120px"></td></tr>
+        <tr><td>Notes:</td><td><textarea name="notes" rows="2" style="width:200px"></textarea></td></tr>
+    </table>
+    <br>
+    <input type="submit" value="💸 Add Transaction" style="padding:10px 20px; font-size:16px;">
+</form>
+
+    <a href="{{ url_for('transactions') }}">View Transaction History</a>
+</body>
+</html>
