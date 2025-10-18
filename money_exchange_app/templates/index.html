@@ -2,50 +2,111 @@
 <html lang="en">
 <head>
     <title>Money Exchange Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: Arial; 
+            margin: 10px; 
+            max-width: 100%; 
+            padding: 0; 
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { text-align: center; color: #333; }
+        .balances { 
+            background: #e8f4f8; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0; 
+        }
+        .form-row { display: flex; gap: 10px; margin: 10px 0; }
+        .form-row select, .form-row input { flex: 1; }
+        select, input, textarea { 
+            width: 100%; 
+            padding: 12px; 
+            margin: 5px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            font-size: 16px; 
+        }
+        textarea { height: 60px; }
+        input[type="submit"] { 
+            width: 100%; 
+            padding: 15px; 
+            font-size: 18px; 
+            background: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            margin-top: 10px; 
+        }
+        .links { text-align: center; margin: 20px 0; }
+        .links a { margin: 0 10px; font-size: 18px; }
+        @media (max-width: 600px) {
+            .form-row { flex-direction: column; }
+            input, select { font-size: 18px; }
+        }
+    </style>
 </head>
 <body>
-    <h1>Current Balances</h1>
-    <ul>
-        {% for currency, amount in balances.items() %}
-            <li>{{ currency }}: {{ amount|round(2) }}</li>
-        {% endfor %}
-    </ul>
+    <div class="container">
+        <h1>💰 Money Exchange</h1>
+        
+        <div class="balances">
+            <h2>Current Balances</h2>
+            {% if balances %}
+                <ul style="padding-left: 20px;">
+                    {% for currency, amount in balances.items() %}
+                        <li style="color: {% if amount >= 0 %}green{% else %}red{% endif %}; margin: 5px 0;">
+                            <strong>{{ currency }}</strong>: {{ "%.2f"|format(amount) }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No transactions yet!</p>
+            {% endif %}
+        </div>
 
-    <h2>Add Transaction</h2>
-    <form method="POST">
-    <table>
-        <tr>
-            <td>From:</td>
-            <td>
-                <select name="from_currency" required style="width:100px">
+        <h2>Add Transaction</h2>
+        <form method="POST">
+            <div class="form-row">
+                <select name="from_currency" required>
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
                     <option value="GBP">GBP</option>
                     <option value="IRR">IRR</option>
                     <option value="CAD">CAD</option>
                 </select>
-            </td>
-        </tr>
-        <tr>
-            <td>To:</td>
-            <td>
-                <select name="to_currency" required style="width:100px">
+                <input type="number" name="from_amount" step="0.01" placeholder="100" required>
+            </div>
+            <div class="form-row">
+                <select name="to_currency" required>
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
                     <option value="GBP">GBP</option>
                     <option value="IRR">IRR</option>
                     <option value="CAD">CAD</option>
                 </select>
-            </td>
-        </tr>
-        <tr><td>Amount:</td><td><input type="number" name="from_amount" step="0.01" placeholder="100.00" required style="width:120px"></td></tr>
-        <tr><td>Rate:</td><td><input type="number" name="exchange_rate" step="0.001" placeholder="0.85" required style="width:120px"></td></tr>
-        <tr><td>Notes:</td><td><textarea name="notes" rows="2" style="width:200px"></textarea></td></tr>
-    </table>
-    <br>
-    <input type="submit" value="💸 Add Transaction" style="padding:10px 20px; font-size:16px;">
-</form>
+                <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" required>
+            </div>
+            <textarea name="notes" placeholder="Customer name or notes..."></textarea>
+            <input type="submit" value="💸 ADD TRANSACTION" style="width:100%; padding:15px; font-size:18px; background:#4CAF50; color:white; border:none; border-radius:5px;">
+        </form>
 
-    <a href="{{ url_for('transactions') }}">View Transaction History</a>
+        <div class="links">
+            <a href="{{ url_for('transactions') }}" style="font-size:18px;">📋 History</a> | 
+            <a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 CSV</a>
+        </div>
+    </div>
+
+    <script>
+    document.querySelector('form').onsubmit = function(e) {
+        let fromAmt = parseFloat(document.querySelector('[name="from_amount"]').value);
+        let rate = parseFloat(document.querySelector('[name="exchange_rate"]').value);
+        let toCurr = document.querySelector('[name="to_currency"]').value;
+        let toAmt = fromAmt * rate;
+        alert(`You will receive: ${toAmt.toFixed(2)} ${toCurr}`);
+    };
+    </script>
 </body>
 </html>

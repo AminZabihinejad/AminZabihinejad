@@ -65,7 +65,76 @@ def index():
     balances = get_balances()
     return render_template('index.html', balances=balances)
 
+
 @app.route('/transactions')
 def transactions():
+    # Get search parameters
+    search_date = request.args.get('date', '')
+    search_from = request.args.get('from_currency', '')
+    search_to = request.args.get('to_currency', '')
+
+    # Start with all transactions
     all_tx = Transaction.query.order_by(Transaction.date.desc()).all()
-    return render_template('transactions.html', transactions=all_tx)
+
+    # Filter by date
+    if search_date:
+        from datetime import datetime
+        search_date_obj = datetime.strptime(search_date, '%Y-%m-%d')
+        all_tx = [tx for tx in all_tx if tx.date.date() == search_date_obj.date()]
+
+    # Filter by FROM currency
+    if search_from:
+        all_tx = [tx for tx in all_tx if tx.from_currency.upper() == search_from.upper()]
+
+    # Filter by TO currency
+    if search_to:
+        all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
+
+    return render_template('transactions.html', transactions=all_tx,
+                           search_date=search_date, search_from=search_from, search_to=search_to)
+
+
+@app.route('/delete/<int:tx_id>')
+def delete_transaction(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    db.session.delete(tx)
+    db.session.commit()
+    return redirect(url_for('transactions'))
+
+# ADD THIS NEW ROUTE (copy exactly)
+@app.route('/export_csv')
+def export_csv():
+        import csv
+        from io import StringIO
+        import sys
+
+        all_tx = Transaction.query.order_by(Transaction.date.desc()).all()
+
+        output = StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        writer.writerow(['ID', 'Date', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes'])
+
+        # Data
+        for tx in all_tx:
+            writer.writerow([
+                tx.id,
+                tx.date.strftime('%Y-%m-%d %H:%M'),
+                tx.from_currency,
+                f"{tx.from_amount:.2f}",
+                tx.to_currency,
+                f"{tx.to_amount:.2f}",
+                f"{tx.exchange_rate:.4f}",
+                tx.notes or ''
+            ])
+
+        response = app.response_class(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': 'attachment;filename=transactions.csv'}
+        )
+        return response
+
+if __name__ == '__main__':
+    app.run(debug=True)

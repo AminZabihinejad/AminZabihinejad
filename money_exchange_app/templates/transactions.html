@@ -2,33 +2,70 @@
 <html lang="en">
 <head>
     <title>Transaction History</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .search-box { background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        input { padding: 5px; margin: 5px; }
+        .no-data { text-align: center; padding: 20px; color: #666; }
+    </style>
 </head>
 <body>
-    <h1>Transaction History</h1>
-    <table border="1">
-        <tr>
-            <th>ID</th>
-            <th>Date</th>
-            <th>From Currency</th>
-            <th>From Amount</th>
-            <th>To Currency</th>
-            <th>To Amount</th>
-            <th>Exchange Rate</th>
-            <th>Notes</th>
-        </tr>
-        {% for tx in transactions %}
+    <h1>📋 Transaction History</h1>
+    
+    <!-- SEARCH FORM -->
+    <div class="search-box">
+        <form method="GET">
+            <strong>🔍 Search:</strong><br>
+            Date: <input type="date" name="date" value="{{ search_date }}"> 
+            From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}"> 
+            To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}"> 
+            <input type="submit" value="SEARCH">
+            <a href="/transactions" style="color:blue;">[Clear]</a>
+        </form>
+    </div>
+
+    {% if transactions %}
+        <table>
             <tr>
-                <td>{{ tx.id }}</td>
-                <td>{{ tx.date }}</td>
-                <td>{{ tx.from_currency }}</td>
-                <td>{{ tx.from_amount }}</td>
-                <td>{{ tx.to_currency }}</td>
-                <td>{{ tx.to_amount }}</td>
-                <td>{{ tx.exchange_rate }}</td>
-                <td>{{ tx.notes }}</td>
+                <th>ID</th>
+                <th>Date</th>
+                <th>From</th>
+                <th>Amount</th>
+                <th>→ To</th>
+                <th>Amount</th>
+                <th>Rate</th>
+                <th>Notes</th>
+		<th>Action</th>
             </tr>
-        {% endfor %}
-    </table>
-    <a href="{{ url_for('index') }}">Back to Dashboard</a>
+            {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.id }}</td>
+                    <td>{{ tx.date.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ tx.from_currency }}</td>
+                    <td>${{ "%.2f"|format(tx.from_amount) }}</td>
+                    <td>{{ tx.to_currency }}</td>
+                    <td>${{ "%.2f"|format(tx.to_amount) }}</td>
+                    <td>{{ "%.4f"|format(tx.exchange_rate) }}</td>
+                    <td>{{ tx.notes or '' }}</td>
+			<td><a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
+       			style="color:red; font-weight:bold;" 
+       			onclick="return confirm('Delete transaction #{{ tx.id }}?')">🗑️ DELETE</a></td>
+                </tr>
+            {% endfor %}
+        </table>
+        <p><em>Showing {{ transactions|length }} transactions</em></p>
+    {% else %}
+        <div class="no-data">
+            <h3>No transactions found!</h3>
+            <p>Add transactions from <a href="{{ url_for('index') }}">Dashboard</a></p>
+        </div>
+    {% endif %}
+
+    <br>
+    <a href="{{ url_for('index') }}" style="font-size:18px;">🏠 Back to Dashboard</a> | 
+    <a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 DOWNLOAD CSV</a>
 </body>
 </html>
