@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}👥 Customers - MoneyExchange Pro{% endblock %}
+{% block content %}
+<h2>👥 Customer Management</h2>
+
+<!-- 🔍 ALWAYS SEARCH BAR -->
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:10px;">
+    <form method="GET" style="display:inline;">
+        <input type="text" name="search" placeholder="🔍 Search Name/Email/PHONE..."  
+       value="{{ request.args.get('search', '') }}" style="width:300px; padding:8px;">
+        <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none;">
+        <a href="{{ url_for('customers') }}" style="margin-left:10px;">[Clear]</a>
+    </form>
+</div>
+
+<!-- ADD CUSTOMER FORM - COMPLETE! -->
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>+ New Customer</h3>
+    <form method="POST">
+        <table style="width:100%;">
+            <tr>
+                <td style="width:120px;">First Name:</td>
+                <td><input name="first_name" required style="width:150px;"></td>
+                <td style="width:120px;">Last Name:</td>
+                <td><input name="last_name" required style="width:150px;"></td>
+            </tr>
+            <tr>
+                <td>Email:</td>
+                <td><input name="email" type="email" required style="width:150px;"></td>
+                <td>Phone:</td>
+                <td><input name="phone" required style="width:150px;"></td>
+            </tr>
+            <tr>
+                <td>Apt #:</td>
+                <td><input name="apartment" placeholder="101" style="width:150px;"></td>
+                <td>Civic #:</td>
+                <td><input name="civic_number" required style="width:150px;"></td>
+            </tr>
+            <tr>
+                <td>Street:</td>
+                <td colspan="3"><input name="street" required style="width:100%;"></td>
+            </tr>
+            <tr>
+                <td>City:</td>
+                <td><input name="city" required style="width:150px;"></td>
+                <td>Province:</td>
+                <td><input name="province" required style="width:60px;"></td>
+                <td>Postal:</td>
+                <td><input name="postal_code" required placeholder="M5V 2T6" style="width:80px;"></td>
+            </tr>
+        </table>
+        <input type="submit" value="👥 ADD CUSTOMER" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; margin-top:10px;">
+    </form>
+</div>
+
+<!-- CUSTOMER LIST -->
+<h3>📋 All Customers ({{ clients|length }})</h3>
+<table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <tr style="background:#f2f2f2;">
+        <th>Name</th><th>Phone</th><th>Address</th><th>City, Prov, Postal</th><th>Tx</th><th>Action</th>
+    </tr>
+    {% for client in clients %}
+    <tr>
+        <td><strong>{{ client.first_name }} {{ client.last_name }}</strong></td>
+        <td>{{ client.phone }}</td>
+        <td>{{ client.apartment|default('') }} {{ client.civic_number }} {{ client.street }}</td>
+        <td>{{ client.city }}, {{ client.province }} {{ client.postal_code }}</td>
+        <td>{{ client.transactions|length }}</td>
+        <td>
+            <a href="{{ url_for('select_customer', client_id=client.id) }}" style="background:#3498db; color:white; padding:5px 8px;">SELECT</a>
+            <a href="{{ url_for('edit_client', client_id=client.id) }}" style="background:#f39c12; color:white; padding:5px 8px; margin-left:5px;">✏️ EDIT</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div style="margin-top:20px;">
+    <a href="{{ url_for('index') }}" style="font-size:16px;">🏠 Dashboard</a>
+</div>
+{% endblock %}

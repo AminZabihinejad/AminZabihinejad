@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Edit Client{% endblock %}
+{% block content %}
+<h2>✏️ Edit Client</h2>
+<div style="background:#e8f4fd; padding:15px; border-radius:8px;">
+    <form method="POST">
+        <table style="width:100%;">
+            <tr><td>First:</td><td><input name="first_name" value="{{ client.first_name }}" required></td>
+                <td>Last:</td><td><input name="last_name" value="{{ client.last_name }}" required></td></tr>
+            <tr><td>Email:</td><td><input name="email" type="email" value="{{ client.email }}" required></td>
+                <td>Phone:</td><td><input name="phone" value="{{ client.phone }}" required></td></tr>
+            <tr><td>Apt:</td><td><input name="apartment" value="{{ client.apartment or '' }}"></td>
+                <td>Civic:</td><td><input name="civic_number" value="{{ client.civic_number }}" required></td></tr>
+            <tr><td>Street:</td><td colspan="3"><input name="street" value="{{ client.street }}" required style="width:100%;"></td></tr>
+            <tr><td>City:</td><td><input name="city" value="{{ client.city }}" required></td>
+                <td>Prov:</td><td><input name="province" value="{{ client.province }}" required></td>
+                <td>Postal:</td><td><input name="postal_code" value="{{ client.postal_code }}" required></td></tr>
+        </table>
+        <input type="submit" value="💾 UPDATE CLIENT" style="width:100%; padding:15px; background:#27ae60; color:white;">
+    </form>
+</div>
+<a href="{{ url_for('clients') }}">👥 Back to Clients</a>
+{% endblock %}

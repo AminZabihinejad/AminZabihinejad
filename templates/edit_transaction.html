@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Edit Transaction{% endblock %}
+{% block content %}
+<h2>✏️ Edit Transaction #{{ tx.id }}</h2>
+<div style="background:#fff3cd; padding:15px; border-radius:8px;">
+    <p><strong>Client:</strong> {{ tx.client.first_name }} {{ tx.client.last_name }}</p>
+</div>
+
+<form method="POST">
+    <table style="width:100%;">
+        <tr><td><strong>From:</strong></td><td>{{ tx.from_currency }}</td></tr>
+        <tr><td><strong>From Amount:</strong></td><td><input type="number" name="from_amount" step="0.01" value="{{ "%.2f"|format(tx.from_amount) }}" required></td></tr>
+        <tr><td><strong>To:</strong></td><td>{{ tx.to_currency }}</td></tr>
+        <tr><td><strong>Rate:</strong></td><td><input type="number" name="exchange_rate" step="0.001" value="{{ "%.4f"|format(tx.exchange_rate) }}" required></td></tr>
+        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2">{{ tx.notes or '' }}</textarea></td></tr>
+    </table>
+    <input type="submit" value="💾 UPDATE TRANSACTION" style="width:100%; padding:15px; background:#27ae60; color:white;">
+</form>
+<a href="{{ url_for('transactions') }}">📋 Back to Transactions</a>
+{% endblock %}

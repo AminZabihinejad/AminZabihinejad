@@ -54,17 +54,15 @@
         <h1>🐷 <span style="color: #ff69b4;">Piggy Bank</span></h1>
     </div>
     
-    <nav class="nav">
-        <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">📊 Overview</a>
-        <a href="{{ url_for('profile') }}" class="{% if request.endpoint == 'profile' %}active{% endif %}">👤 Profile</a>
-	<a href="{{ url_for('deposit') }}" class="{% if request.endpoint == 'deposit' %}active{% endif %}">💰 Deposit</a>
-        <a href="#" class="{% if request.endpoint == 'customers' %}active{% endif %}">👥 Customers</a>
-        <a href="#" class="{% if request.endpoint == 'rates' %}active{% endif %}">💱 Rates</a>
-        <a href="{{ url_for('transactions') }}" class="{% if request.endpoint == 'transactions' %}active{% endif %}">⚙️ Operation</a>
-        <a href="#" class="{% if request.endpoint == 'update_operation' %}active{% endif %}">🔄 Update Operation</a>
-        <a href="{{ url_for('charts') }}" class="{% if request.endpoint == 'charts' %}active{% endif %}">📈 Reports</a>
-        <a href="{{ url_for('export_csv') }}" style="color: #27ae60;">💾 Export</a>
-    </nav>
+   <nav style="background:#2c3e50; padding:15px;">
+    <a href="{{ url_for('index') }}" style="color:white; margin-right:20px; font-size:18px;">🏠 Dashboard</a>
+    <a href="{{ url_for('customers') }}" style="color:white; margin-right:20px; font-size:18px;">👥 Customers</a>
+    <a href="{{ url_for('transactions') }}" style="color:white; margin-right:20px;">📋 Transactions</a>
+    <a href="{{ url_for('deposit') }}" style="color:white; margin-right:20px;">💰 Deposit</a>
+    <a href="{{ url_for('charts') }}" style="color:white; margin-right:20px;">📊 Reports</a>
+    <a href="{{ url_for('profile') }}" style="color:white; margin-right:20px;">👤 {{ session.username }}</a>
+    <a href="{{ url_for('logout') }}" style="color:white;">🚪 Logout</a>
+	</nav>
 
     <div class="container">
         {% block content %}{% endblock %}
