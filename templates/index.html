@@ -74,7 +74,22 @@
     | Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" id="flat_input" style="width:60px;">CAD
     <button type="button" onclick="setFeesFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none;">💾 SET</button>
 </td></tr>
-        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
+<tr><td><strong>FINTRAC:</strong></td><td>
+    <input type="checkbox" name="is_fintrac" id="fintrac_cb"> 
+    <label for="fintrac_cb" style="color:#e74c3c; font-weight:bold;">🚨 Report to FINTRAC ($10K+)</label>
+    <script>
+        // ✅ AUTO CHECK $10K+
+        let amount = document.querySelector('input[name="fixed_amount"]').value;
+        let cb = document.getElementById('fintrac_cb');
+        if (parseFloat(amount) >= 10000) cb.checked = true;
+        
+        // ✅ UPDATE ON AMOUNT CHANGE
+        document.querySelector('input[name="fixed_amount"]').oninput = function() {
+            if (parseFloat(this.value) >= 10000) cb.checked = true;
+            else cb.checked = false;
+        }
+    </script>
+</td></tr>        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
     </table>
     <input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">
     <input type="submit" value="💸 CONFIRM" style="width:48%; padding:15px; background:#4CAF50; color:white; border:none;">

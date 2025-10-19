@@ -12,6 +12,10 @@
         <tr><td><strong>From Amount:</strong></td><td><input type="number" name="from_amount" step="0.01" value="{{ "%.2f"|format(tx.from_amount) }}" required></td></tr>
         <tr><td><strong>To:</strong></td><td>{{ tx.to_currency }}</td></tr>
         <tr><td><strong>Rate:</strong></td><td><input type="number" name="exchange_rate" step="0.001" value="{{ "%.4f"|format(tx.exchange_rate) }}" required></td></tr>
+	<tr><td><strong>FINTRAC:</strong></td><td>
+    		<input type="checkbox" name="is_fintrac" {% if tx.is_fintrac %}checked{% endif %}> 
+    		<span style="color:#e74c3c;">🚨 Report to FINTRAC ($10K+)</span>
+	</td></tr>
         <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2">{{ tx.notes or '' }}</textarea></td></tr>
     </table>
     <input type="submit" value="💾 UPDATE TRANSACTION" style="width:100%; padding:15px; background:#27ae60; color:white;">

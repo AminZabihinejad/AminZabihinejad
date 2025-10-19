@@ -33,27 +33,33 @@
         {% endif %}
     </div>
     
-    <!-- SEARCH FORM -->
+    <!-- ✅ SEARCH FORM WITH ALL FIELDS -->
     <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
-            <strong>🔍 Search:</strong><br>
-            Date: <input type="date" name="date" value="{{ search_date }}"> 
-            Client: <input type="text" name="client_name" placeholder="John Doe" value="{{ search_client }}"> 
-            From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}"> 
-            To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}"> 
+            <strong>🔍 Search:</strong>
+            <input type="date" name="date" value="{{ search_date }}" style="margin-right:10px;">
+            Client: <input type="text" name="client_name" placeholder="John Doe" value="{{ search_client }}" style="width:120px; margin-right:10px;">
+            From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}" style="width:60px; margin-right:10px;">
+            To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}" style="width:60px; margin-right:10px;">
+            FINTRAC: <select name="fintrac" style="margin-right:10px;">
+                <option value="">All</option>
+                <option value="yes" {{ 'selected' if request.args.get('fintrac') == 'yes' }}>🚨 YES</option>
+                <option value="no" {{ 'selected' if request.args.get('fintrac') == 'no' }}>✅ NO</option>
+            </select>
             <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none;">
-            <a href="/transactions" style="color:blue; margin-left:10px;">[Clear All]</a>
+            <a href="{{ url_for('transactions') }}" style="color:blue; margin-left:10px;">[Clear All]</a>
         </form>
     </div>
 
     {% if transactions %}
-        <!-- ✅ EXPORT BUTTON WITH FILTERS! -->
+        <!-- ✅ EXPORT BUTTON WITH ALL FILTERS! -->
         <div style="text-align:center; margin-bottom:15px;">
             <a href="{{ url_for('export_csv', 
                 date=search_date, 
                 client_name=search_client, 
                 from_currency=search_from, 
-                to_currency=search_to) }}" 
+                to_currency=search_to, 
+                fintrac=request.args.get('fintrac', '')) }}" 
                style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
                 💾 EXPORT {{ transactions|length }} FILTERED TRANSACTIONS CSV
             </a>
@@ -71,11 +77,12 @@
                 <th>Rate</th>
                 <th>Fee</th>
                 <th>Profit</th>
+                <th>FINTRAC</th>
                 <th>Notes</th>
                 <th>Action</th>
             </tr>
             {% for tx in transactions %}
-                {% set profit = ((tx.from_amount * current_fee / 100) + current_flat_fee)|round(2) %}
+                {% set profit = ((tx.from_amount * current_fee / 100) + current_flat_fee)|round(2) if tx.from_amount > 0 else 0 %}
                 <tr>
                     <td>{{ tx.id }}</td>
                     <td style="white-space: nowrap;">
@@ -90,13 +97,20 @@
                     <td style="color: red; font-weight: bold;">${{ "%.2f"|format(tx.from_amount) }}</td>
                     <td>{{ tx.to_currency }}</td>
                     <td style="color: green; font-weight: bold;">${{ "%.2f"|format(tx.to_amount) }}</td>
-                    <td style="white-space: nowrap;">{{ "%.4f"|format(tx.exchange_rate) }}</td>
-                    <td style="white-space: nowrap;">{{ current_fee }}%</td>
+                    <td style="white-space: nowrap;">{{ "%.8f"|format(tx.exchange_rate) }}</td>
+                    <td style="white-space: nowrap;">{{ current_fee }}% + ${{ current_flat_fee }}</td>
                     <td style="color: #27ae60; font-weight: bold;">${{ "%.2f"|format(profit) }}</td>
+                    <td style="text-align:center;">
+                        {% if tx.is_fintrac %}
+                            <span style="background:#e74c3c; color:white; padding:3px 8px; border-radius:3px; font-weight:bold;">🚨 YES</span>
+                        {% else %}
+                            <span style="background:#27ae60; color:white; padding:3px 6px; border-radius:3px;">✅ NO</span>
+                        {% endif %}
+                    </td>
                     <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
                     <td>
                         <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px;">✏️ EDIT</a>
-                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete?')">🗑️</a>
+                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete transaction #{{ tx.id }}?')">🗑️</a>
                     </td>
                 </tr>
             {% endfor %}

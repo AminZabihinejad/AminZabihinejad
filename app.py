@@ -45,6 +45,7 @@ class Transaction(db.Model):
     to_amount = db.Column(db.Float, nullable=False)
     exchange_rate = db.Column(db.Float, nullable=False)
     notes = db.Column(db.Text, nullable=True)
+    is_fintrac = db.Column(db.Boolean, default=False)  # ✅ NEW!
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
 
 
@@ -84,8 +85,12 @@ def get_balances():
         transactions = Transaction.query.filter_by(client_id=client_id).all()
     balances = {}
     for tx in transactions:
-        balances[tx.from_currency] = balances.get(tx.from_currency, 0) - tx.from_amount
-        balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
+        # ✅ DEPOSIT = ZERO FEE!
+        if tx.from_amount == 0:  # DEPOSIT
+            balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
+        else:  # EXCHANGE
+            balances[tx.from_currency] = balances.get(tx.from_currency, 0) - tx.from_amount
+            balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
     return balances
 
 
@@ -149,10 +154,13 @@ def index():
             return render_template('index.html', balances=get_balances(), current_fee=current_fee,
                                    current_flat_fee=current_flat_fee, client=selected_client)
 
+        is_fintrac = request.form.get('is_fintrac', False) == 'on'  # ✅ DASHBOARD CHECKBOX!
+
         new_tx = Transaction(
             from_currency=from_curr, to_currency=to_curr,
             from_amount=from_amt, to_amount=to_amt,
             exchange_rate=rate, notes=notes,
+            is_fintrac=is_fintrac,  # ✅ USE CHECKBOX!
             client_id=session['selected_client_id']
         )
         db.session.add(new_tx)
@@ -258,6 +266,7 @@ def edit_transaction(tx_id):
         tx.to_amount = tx.from_amount * float(request.form['exchange_rate'])
         tx.exchange_rate = float(request.form['exchange_rate'])
         tx.notes = request.form.get('notes')
+        tx.is_fintrac = request.form.get('is_fintrac', False) == 'on'  # ✅ NEW!
         db.session.commit()
         flash(f'✅ Transaction #{tx.id} updated!')
         return redirect(url_for('transactions'))
@@ -389,6 +398,7 @@ def export_csv():
     search_client = request.args.get('client_name', '')
     search_from = request.args.get('from_currency', '')
     search_to = request.args.get('to_currency', '')
+    search_fintrac = request.args.get('fintrac', '')
 
     # ✅ SAME QUERY AS TRANSACTIONS TABLE!
     query = Transaction.query.order_by(Transaction.date.desc())
@@ -401,6 +411,10 @@ def export_csv():
         else:
             all_tx = []
 
+    if search_fintrac == 'yes':
+        all_tx = [tx for tx in all_tx if tx.is_fintrac]
+    elif search_fintrac == 'no':
+        all_tx = [tx for tx in all_tx if not tx.is_fintrac]
     # ✅ APPLY SAME FILTERS!
     if search_date:
         search_date_obj = datetime.strptime(search_date, '%Y-%m-%d')
@@ -461,12 +475,10 @@ def deposit():
         notes = request.form.get('notes', f'Deposit {amount} {currency}')
 
         new_tx = Transaction(
-            from_currency=currency,
-            to_currency=currency,
-            from_amount=0,
-            to_amount=amount,
-            exchange_rate=1.0,
-            notes=notes,
+            from_currency=currency, to_currency=currency,
+            from_amount=0, to_amount=amount,
+            exchange_rate=1.0, notes=notes,
+            is_fintrac=(amount >= 10000),  # ✅ AUTO $10K+!
             client_id=session['selected_client_id']
         )
         db.session.add(new_tx)
@@ -503,10 +515,14 @@ def reports():
             daily_profit[date_str] = {'count': 0, 'volume': 0, 'profit': 0}
         daily_profit[date_str]['count'] += 1
         daily_profit[date_str]['volume'] += tx.from_amount
-        daily_profit[date_str]['profit'] += round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        # ✅ FIXED! SAME AS TRANSACTIONS.HTML
+        profit_per_tx = ((tx.from_amount * (FEE_PERCENTAGE * 100) / 100) + FLAT_FEE_CAD) if tx.from_amount > 0 else 0
+        daily_profit[date_str]['profit'] += round(profit_per_tx, 2)
 
-    # ✅ TODAY HIGHLIGHT
+    # ✅ TODAY DEFINED!
     today = datetime.now().strftime('%Y-%m-%d')
+
+    # ✅ CLEAN TOTALS!
     week_total = sum(daily['profit'] for daily in list(daily_profit.values())[:7])
     month_total = sum(daily['profit'] for daily in daily_profit.values())
 
@@ -520,7 +536,6 @@ def reports():
                            month_total=month_total,
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
