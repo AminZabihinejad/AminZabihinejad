@@ -1,131 +1,119 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Money Exchange Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: Arial; 
-            margin: 10px; 
-            max-width: 100%; 
-            padding: 0; 
-        }
-        .container { max-width: 600px; margin: 0 auto; }
-        h1 { text-align: center; color: #333; }
-        .balances { 
-            background: #e8f4f8; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin: 10px 0; 
-        }
-        .form-row { display: flex; gap: 10px; margin: 10px 0; }
-        .form-row select, .form-row input { flex: 1; }
-        select, input, textarea { 
-            width: 100%; 
-            padding: 12px; 
-            margin: 5px 0; 
-            border: 1px solid #ddd; 
-            border-radius: 4px; 
-            font-size: 16px; 
-        }
-        textarea { height: 60px; }
-        input[type="submit"] { 
-            width: 100%; 
-            padding: 15px; 
-            font-size: 18px; 
-            background: #4CAF50; 
-            color: white; 
-            border: none; 
-            border-radius: 5px; 
-            margin-top: 10px; 
-        }
-        .links { text-align: center; margin: 20px 0; }
-        .links a { margin: 0 10px; font-size: 18px; }
-        @media (max-width: 600px) {
-            .form-row { flex-direction: column; }
-            input, select { font-size: 18px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>💰 Money Exchange</h1>
-        
-        <div class="balances">
-            <h2>Current Balances</h2>
-            {% if balances %}
-                <ul style="padding-left: 20px;">
-                    {% for currency, amount in balances.items() %}
-                        <li style="color: {% if amount >= 0 %}green{% else %}red{% endif %}; margin: 5px 0;">
-                            <strong>{{ currency }}</strong>: {{ "%.2f"|format(amount) }}
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p>No transactions yet!</p>
-            {% endif %}
+{% extends "base.html" %}
+{% block title %}Piggy Bank - Overview{% endblock %}
+{% block content %}
+{% with messages = get_flashed_messages() %}
+    {% if messages %}
+        <div style="background: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin: 20px; text-align: center; font-weight: bold; border: 2px solid #f44336;">
+            {{ messages[0] }}
         </div>
+    {% endif %}
+{% endwith %}
 
-        <h2>Add Transaction</h2>
-        <form method="POST">
-            <div class="form-row">
-                <select name="from_currency" required>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="IRR">IRR</option>
-                    <option value="CAD">CAD</option>
-                </select>
-                <input type="number" name="from_amount" step="0.01" placeholder="100" required>
-            </div>
-            <div class="form-row">
-                <select name="to_currency" required>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="IRR">IRR</option>
-                    <option value="CAD">CAD</option>
-                </select>
-                <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required>
-		<button type="button" onclick="getLiveRate()" style="padding:10px; background:#2196F3; color:white; border:none; border-radius:4px; margin-left:5px;">🌍 LIVE RATE</button>
-            </div>
-            <textarea name="notes" placeholder="Customer name or notes..."></textarea>
-            <input type="submit" value="💸 ADD TRANSACTION" style="width:100%; padding:15px; font-size:18px; background:#4CAF50; color:white; border:none; border-radius:5px;">
-        </form>
-
-        <div class="links">
-            <a href="{{ url_for('transactions') }}" style="font-size:18px;">📋 History</a> | 
-		<a href="{{ url_for('charts') }}" style="font-size:18px; color: blue;">📊 CHARTS</a> | 
-		<a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 CSV</a>
-        </div>
+    <h1>Current Balances</h1>
+    <div class="balances">
+        {% if balances %}
+            <ul style="padding-left: 20px;">
+                {% for currency, amount in balances.items() %}
+                    <li style="color: {% if amount >= 0 %}green{% else %}red{% endif %}; margin: 5px 0;">
+                        <strong>{{ currency }}</strong>: {{ "%.2f"|format(amount) }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No transactions yet!</p>
+        {% endif %}
     </div>
 
-    <script>
-    document.querySelector('form').onsubmit = function(e) {
-        let fromAmt = parseFloat(document.querySelector('[name="from_amount"]').value);
-        let rate = parseFloat(document.querySelector('[name="exchange_rate"]').value);
-        let toCurr = document.querySelector('[name="to_currency"]').value;
-        let toAmt = fromAmt * rate;
-        alert(`You will receive: ${toAmt.toFixed(2)} ${toCurr}`);
-    };
-    </script>
+    <h2>Add Transaction</h2>
+<form method="POST">
+    <!-- MODE SELECTOR -->
+    <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin-bottom:15px;">
+        <label><input type="radio" name="mode" value="client_fixed" checked> 💰 Client Fixed Amount</label>
+        <label style="margin-left:20px;"><input type="radio" name="mode" value="bank_fixed"> 🏦 Bank Fixed Amount</label>
+    </div>
+    
+    <table style="width: 100%;">
+        <tr><td><strong>{{ "From" if request.form.get('mode') != 'bank_fixed' else "To" }}:</strong></td>
+            <td><select name="fixed_currency" required>
+                <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
+                <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
+                <option value="CAD">🇨🇦 CAD</option>
+            </select>
+        </td></tr>
+        <tr><td><strong>Fixed Amount:</strong></td>
+            <td><input type="number" name="fixed_amount" step="0.01" placeholder="100" required></td></tr>
+        <tr><td><strong>{{ "To" if request.form.get('mode') != 'bank_fixed' else "From" }}:</strong></td>
+            <td><select name="other_currency" required>
+                <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
+                <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
+                <option value="CAD">🇨🇦 CAD</option>
+            </select>
+        </td></tr>
+        <tr><td><strong>Rate:</strong></td><td>
+            <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required>
+            <button type="button" onclick="getLiveRate()" style="padding:5px; background:#2196F3; color:white; border:none;">🌍 LIVE</button>
+        </td></tr>
+        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2"></textarea></td></tr>
+    </table>
+	<input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">
+	<input type="submit" value="💸 CONFIRM" style="width:48%; padding:15px; background:#4CAF50; color:white; border:none;">
+    </form>
 
-<script>
-function getLiveRate() {
-    let fromCurr = document.querySelector('[name="from_currency"]').value;
-    let toCurr = document.querySelector('[name="to_currency"]').value;
-    if (!fromCurr || !toCurr) {
-        alert('Please select FROM and TO currencies first!');
-        return;
-    }
-    fetch(`/get_rate/${fromCurr}/${toCurr}`)
-        .then(response => response.text())
-        .then(rate => {
-            document.querySelector('#rate').value = rate;
-            alert(`✅ LIVE RATE: 1 ${fromCurr} = ${rate} ${toCurr}`);
-        });
+
+    <script>
+    // REMOVED - Preview handles confirmation now
+    function getLiveRate() {
+    let fixedCurr = document.querySelector('[name="fixed_currency"]').value;
+    let otherCurr = document.querySelector('[name="other_currency"]').value;
+    let mode = document.querySelector('[name="mode"]:checked').value;
+    if (!fixedCurr || !otherCurr) return alert('Select currencies first!');
+    
+    let fromCurr = mode == 'client_fixed' ? fixedCurr : otherCurr;
+    let toCurr = mode == 'client_fixed' ? otherCurr : fixedCurr;
+    fetch(`/get_rate/${fromCurr}/${toCurr}`).then(r=>r.text()).then(rate=>document.querySelector('#rate').value=rate);
 }
-</script>
-</body>
-</html>
+
+function showPreview() {
+    let mode = document.querySelector('[name="mode"]:checked').value;
+    let fixedCurr = document.querySelector('[name="fixed_currency"]').value;
+    let fixedAmt = parseFloat(document.querySelector('[name="fixed_amount"]').value);
+    let otherCurr = document.querySelector('[name="other_currency"]').value;
+    let rate = parseFloat(document.querySelector('[name="exchange_rate"]').value);
+    
+    if (!fixedAmt || !rate) return alert('Fill amount & rate first!');
+    
+    let giveCurr, giveAmt, getCurr, getAmt;
+    
+    if (mode == 'client_fixed') {
+        giveCurr = fixedCurr;
+        giveAmt = fixedAmt;
+        getCurr = otherCurr;
+        getAmt = fixedAmt * rate;
+    } else {
+        giveCurr = otherCurr;
+        giveAmt = fixedAmt / rate;
+        getCurr = fixedCurr;
+        getAmt = fixedAmt;
+    }
+    
+    let message = `
+🚀 EXCHANGE PREVIEW
+━━━━━━━━━━━━━━━━━━━━
+👤 YOU GIVE: $${giveAmt.toFixed(2)} ${giveCurr}
+💰 YOU GET:  $${getAmt.toFixed(2)} ${getCurr}
+📊 RATE:     1 ${giveCurr} = ${rate.toFixed(4)} ${getCurr}
+━━━━━━━━━━━━━━━━━━━━
+✅ Click CONFIRM button below to proceed
+    `;
+    
+    // SHOW PREVIEW - DO NOT AUTO-SUBMIT!
+    alert(message);
+    // HIGHLIGHT CONFIRM BUTTON
+    document.querySelector('input[type="submit"]').style.background = '#27ae60';
+    setTimeout(() => {
+        document.querySelector('input[type="submit"]').style.background = '#4CAF50';
+    }, 2000);
+}
+
+    </script>
+{% endblock %}

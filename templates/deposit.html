@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Deposit - Piggy Bank{% endblock %}
+{% block content %}
+<h2>💰 Deposit Money</h2>
+<div style="background:#e8f4fd; padding:20px; border-radius:8px;">
+    <h3>Current Balance: ${{ "%.2f"|format(total_deposits) }}</h3>
+    <form method="POST">
+        <table style="width:100%;">
+            <tr><td>Currency:</td><td>
+                <select name="currency" style="padding:10px; width:100%;">
+                    <option value="USD">💵 USD</option>
+                    <option value="EUR">💶 EUR</option>
+                    <option value="GBP">💷 GBP</option>
+                    <option value="IRR">🇮🇷 IRR</option>
+                    <option value="CAD">🇨🇦 CAD</option>
+                </select>
+            </td></tr>
+            <tr><td>Amount:</td><td><input type="number" name="amount" step="0.01" placeholder="1000" required style="width:100%; padding:10px;"></td></tr>
+            <tr><td>Notes:</td><td><textarea name="notes" rows="2" style="width:100%;"></textarea></td></tr>
+        </table>
+        <input type="submit" value="💸 DEPOSIT NOW" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; font-size:18px;">
+    </form>
+</div>
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('index') }}">🏠 Back to Overview</a>
+</div>
+{% endblock %}

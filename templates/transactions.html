@@ -1,35 +1,25 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Transaction History</title>
-    <style>
-        body { font-family: Arial; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .search-box { background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; }
-        input { padding: 5px; margin: 5px; }
-        .no-data { text-align: center; padding: 20px; color: #666; }
-    </style>
-</head>
-<body>
-    <h1>📋 Transaction History</h1>
+{% extends "base.html" %}
+
+{% block title %}Operation - MoneyExchange Pro{% endblock %}
+
+{% block content %}
+    <h2>⚙️ Transaction Operations</h2>
     
     <!-- SEARCH FORM -->
-    <div class="search-box">
+    <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
             <strong>🔍 Search:</strong><br>
             Date: <input type="date" name="date" value="{{ search_date }}"> 
             From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}"> 
             To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}"> 
-            <input type="submit" value="SEARCH">
-            <a href="/transactions" style="color:blue;">[Clear]</a>
+            <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none;">
+            <a href="/transactions" style="color:blue; margin-left:10px;">[Clear All]</a>
         </form>
     </div>
 
     {% if transactions %}
-        <table>
-            <tr>
+        <table style="width:100%; border-collapse: collapse; font-size:14px;">
+            <tr style="background:#f2f2f2;">
                 <th>ID</th>
                 <th>Date</th>
                 <th>From</th>
@@ -38,34 +28,37 @@
                 <th>Amount</th>
                 <th>Rate</th>
                 <th>Notes</th>
-		<th>Action</th>
+                <th>Action</th>
             </tr>
             {% for tx in transactions %}
                 <tr>
                     <td>{{ tx.id }}</td>
                     <td>{{ tx.date.strftime('%Y-%m-%d %H:%M') }}</td>
                     <td>{{ tx.from_currency }}</td>
-                    <td>${{ "%.2f"|format(tx.from_amount) }}</td>
+                    <td style="color: red;">${{ "%.2f"|format(tx.from_amount) }}</td>
                     <td>{{ tx.to_currency }}</td>
-                    <td>${{ "%.2f"|format(tx.to_amount) }}</td>
+                    <td style="color: green;">${{ "%.2f"|format(tx.to_amount) }}</td>
                     <td>{{ "%.4f"|format(tx.exchange_rate) }}</td>
                     <td>{{ tx.notes or '' }}</td>
-			<td><a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
-       			style="color:red; font-weight:bold;" 
-       			onclick="return confirm('Delete transaction #{{ tx.id }}?')">🗑️ DELETE</a></td>
+                    <td>
+                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
+                           style="color:red; font-weight:bold;" 
+                           onclick="return confirm('Delete transaction #{{ tx.id }}?')">
+                            🗑️ DELETE
+                        </a>
+                    </td>
                 </tr>
             {% endfor %}
         </table>
-        <p><em>Showing {{ transactions|length }} transactions</em></p>
+        <p style="margin-top:10px;"><em>Showing {{ transactions|length }} transactions</em></p>
     {% else %}
-        <div class="no-data">
+        <div style="text-align:center; padding:30px; color:#666;">
             <h3>No transactions found!</h3>
-            <p>Add transactions from <a href="{{ url_for('index') }}">Dashboard</a></p>
+            <p>Add transactions from <a href="{{ url_for('index') }}">📊 Overview</a></p>
         </div>
     {% endif %}
 
-    <br>
-    <a href="{{ url_for('index') }}" style="font-size:18px;">🏠 Back to Dashboard</a> | 
-    <a href="{{ url_for('export_csv') }}" style="font-size:18px; color: green;">💾 DOWNLOAD CSV</a>
-</body>
-</html>
+    <div style="margin-top:20px; text-align:center;">
+        <a href="{{ url_for('index') }}" style="font-size:16px;">🏠 Back to Overview</a>
+    </div>
+{% endblock %}

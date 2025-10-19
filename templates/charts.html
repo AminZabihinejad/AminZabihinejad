@@ -1,26 +1,24 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Balance Charts</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: Arial; margin: 10px; text-align: center; }
-        canvas { max-width: 100%; height: 400px; }
-        .links { margin: 20px; }
-        .links a { font-size: 18px; margin: 0 10px; }
-    </style>
-</head>
-<body>
-    <h1>📊 Balance Over Time (Last 30 Days)</h1>
-    <canvas id="balanceChart"></canvas>
+{% extends "base.html" %}
+
+{% block title %}Reports - MoneyExchange Pro{% endblock %}
+
+{% block content %}
+    <h2>📈 Balance Reports (Last 30 Days)</h2>
     
-    <div class="links">
-        <a href="{{ url_for('index') }}">🏠 Dashboard</a> | 
-        <a href="{{ url_for('transactions') }}">📋 History</a> | 
-        <a href="{{ url_for('export_csv') }}">💾 CSV</a>
+    <div style="text-align:center; margin:20px 0;">
+        <canvas id="balanceChart" style="max-height: 400px; width:100%;"></canvas>
     </div>
 
+    <div style="background:#f9f9f9; padding:15px; border-radius:5px; margin:10px 0;">
+        <strong>💡 What this shows:</strong> Your USD (red) & EUR (green) balances over time<br>
+        <strong>📊 Tip:</strong> Add more transactions to see the lines grow!
+    </div>
+
+    <div style="text-align:center; margin:20px 0;">
+        <a href="{{ url_for('index') }}" style="font-size:16px;">🏠 Back to Overview</a>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         const ctx = document.getElementById('balanceChart').getContext('2d');
         const data = {{ chart_data | safe }};
@@ -35,24 +33,49 @@
                         data: data.usd,
                         borderColor: 'red',
                         backgroundColor: 'rgba(255,0,0,0.1)',
-                        tension: 0.1
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.3
                     },
                     {
                         label: 'EUR Balance', 
                         data: data.eur,
                         borderColor: 'green',
                         backgroundColor: 'rgba(0,255,0,0.1)',
-                        tension: 0.1
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'GBP Balance',
+                        data: [0,0,0,0,0],  // Placeholder - will expand later
+                        borderColor: 'blue',
+                        backgroundColor: 'rgba(0,0,255,0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.3
                     }
                 ]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
                 scales: {
-                    y: { beginAtZero: false }
+                    y: { 
+                        beginAtZero: false,
+                        grid: { color: '#e0e0e0' }
+                    },
+                    x: { 
+                        grid: { color: '#e0e0e0' }
+                    }
                 }
             }
         });
     </script>
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Piggy Bank{% endblock %}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial; margin: 0; padding: 0; background: #f8f9fa; }
+        .header { 
+            background: #34495e; 
+            color: white; 
+            padding: 15px; 
+            text-align: center; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .header h1 { 
+            margin: 0; 
+            font-size: 28px; 
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .nav { 
+            background: #34495e; 
+            padding: 0; 
+            display: flex; 
+            flex-wrap: wrap; 
+            justify-content: center;
+        }
+        .nav a { 
+            color: white; 
+            padding: 15px 20px; 
+            text-decoration: none; 
+            font-size: 16px; 
+            transition: background 0.3s;
+        }
+        .nav a:hover { background: #2c3e50; }
+        .nav a.active { background: #3498db; color: #fff; }
+        .container { 
+            max-width: 1200px; 
+            margin: 20px auto; 
+            padding: 20px; 
+            background: white; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 768px) {
+            .nav { flex-direction: column; }
+            .nav a { padding: 12px; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🐷 <span style="color: #ff69b4;">Piggy Bank</span></h1>
+    </div>
+    
+    <nav class="nav">
+        <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">📊 Overview</a>
+        <a href="{{ url_for('profile') }}" class="{% if request.endpoint == 'profile' %}active{% endif %}">👤 Profile</a>
+	<a href="{{ url_for('deposit') }}" class="{% if request.endpoint == 'deposit' %}active{% endif %}">💰 Deposit</a>
+        <a href="#" class="{% if request.endpoint == 'customers' %}active{% endif %}">👥 Customers</a>
+        <a href="#" class="{% if request.endpoint == 'rates' %}active{% endif %}">💱 Rates</a>
+        <a href="{{ url_for('transactions') }}" class="{% if request.endpoint == 'transactions' %}active{% endif %}">⚙️ Operation</a>
+        <a href="#" class="{% if request.endpoint == 'update_operation' %}active{% endif %}">🔄 Update Operation</a>
+        <a href="{{ url_for('charts') }}" class="{% if request.endpoint == 'charts' %}active{% endif %}">📈 Reports</a>
+        <a href="{{ url_for('export_csv') }}" style="color: #27ae60;">💾 Export</a>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

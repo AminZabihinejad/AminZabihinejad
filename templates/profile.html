@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Profile - Piggy Bank{% endblock %}
+{% block content %}
+<h2>👤 {{ user.username }} Profile</h2>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div style="background:#f9f9f9; padding:20px; border-radius:8px;">
+        <h3>Account Information</h3>
+        <p><strong>Username:</strong> {{ user.username }}</p>
+        <p><strong>Role:</strong> {% if user.is_admin %}🔑 Admin{% else %}👤 User{% endif %}</p>
+        <p><strong>Member Since:</strong> {{ user.created_at.strftime('%Y-%m-%d') }}</p>
+        <p><strong>Total Transactions:</strong> {{ total_transactions }}</p>
+        {% if user.is_admin %}
+            <p><strong>Total Users:</strong> {{ total_users }}</p>
+        {% endif %}
+    </div>
+    <div style="background:#e8f4fd; padding:20px; border-radius:8px;">
+        <h3>💎 Upgrade Plans</h3>
+        <table style="width:100%; border-collapse:collapse;">
+            <tr style="background:#3498db; color:white;"><th>Plan</th><th>Price</th><th>Users</th></tr>
+            <tr><td><strong>Solo</strong></td><td>$9.99/mo</td><td>1</td></tr>
+            <tr><td><strong>Team</strong></td><td>$29/mo</td><td>5</td></tr>
+            <tr style="background:#27ae60; color:white;"><td><strong>Admin</strong></td><td>FREE</td><td>ALL</td></tr>
+        </table>
+    </div>
+</div>
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('index') }}" style="margin-right:10px; font-size:16px;">🏠 Overview</a>
+    <a href="{{ url_for('logout') }}" style="background:#e74c3c; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-size:16px;">🚪 LOGOUT</a>
+</div>
+{% endblock %}
