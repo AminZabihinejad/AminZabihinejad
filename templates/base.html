@@ -58,9 +58,9 @@
     <a href="{{ url_for('index') }}" style="color:white; margin-right:20px; font-size:18px;">🏠 Dashboard</a>
     <a href="{{ url_for('customers') }}" style="color:white; margin-right:20px; font-size:18px;">👥 Customers</a>
     <a href="{{ url_for('transactions') }}" style="color:white; margin-right:20px;">📋 Transactions</a>
+	<a href="{{ url_for('reports') }}"style="color:white; margin-right:20px;">📊 Reports</a>
     <a href="{{ url_for('deposit') }}" style="color:white; margin-right:20px;">💰 Deposit</a>
-    <a href="{{ url_for('charts') }}" style="color:white; margin-right:20px;">📊 Reports</a>
-    <a href="{{ url_for('profile') }}" style="color:white; margin-right:20px;">👤 {{ session.username }}</a>
+    <a href="{{ url_for('profile') }}" style="color:white; margin-right:20px;">👤Profile {{ session.username }}</a>
     <a href="{{ url_for('logout') }}" style="color:white;">🚪 Logout</a>
 	</nav>
 

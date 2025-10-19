@@ -8,14 +8,15 @@
     <!-- ✅ FEE CONTROL - ADMIN ONLY -->
     {% if session.is_admin %}
     <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
-        <strong>💰 Exchange Fee Control:</strong>
-        <form method="POST" action="{{ url_for('set_fee') }}" style="display:inline;">
-            <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" style="width:60px; padding:5px;">%
-            <input type="submit" value="💾 SET FEE" style="padding:8px 15px; background:#27ae60; color:white; border:none; border-radius:3px;">
+        <strong>💰 Fee Control:</strong>
+        <form method="POST" action="{{ url_for('set_fees') }}" style="display:inline;">
+            % Fee: <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" style="width:50px;">%
+            Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" style="width:60px;">CAD
+            <input type="submit" value="💾 SET FEES" style="padding:8px 15px; background:#27ae60; color:white; border:none;">
         </form>
         <p style="margin:5px 0; font-weight:bold;">
-            <strong>Current:</strong> {{ current_fee }}% | 
-            <strong>Profit per $100:</strong> ${{ "%.2f"|format(100 * current_fee / 100) }}
+            <strong>Current:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD | 
+            <strong>Profit per $200:</strong> ${{ "%.2f"|format((200 * current_fee / 100) + current_flat_fee) }}
         </p>
     </div>
     {% endif %}
@@ -46,6 +47,18 @@
     </div>
 
     {% if transactions %}
+        <!-- ✅ EXPORT BUTTON WITH FILTERS! -->
+        <div style="text-align:center; margin-bottom:15px;">
+            <a href="{{ url_for('export_csv', 
+                date=search_date, 
+                client_name=search_client, 
+                from_currency=search_from, 
+                to_currency=search_to) }}" 
+               style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
+                💾 EXPORT {{ transactions|length }} FILTERED TRANSACTIONS CSV
+            </a>
+        </div>
+
         <table style="width:100%; border-collapse: collapse; font-size:12px;">
             <tr style="background:#f2f2f2;">
                 <th>ID</th>
@@ -62,16 +75,16 @@
                 <th>Action</th>
             </tr>
             {% for tx in transactions %}
-                {% set profit = ((tx.from_amount * current_fee / 100)|round(2)) %}
+                {% set profit = ((tx.from_amount * current_fee / 100) + current_flat_fee)|round(2) %}
                 <tr>
                     <td>{{ tx.id }}</td>
                     <td style="white-space: nowrap;">
-    			<strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
-    			<small style="color:#666;">
-        			{{ tx.client.phone[:12] }}...<br>
-        		{{ tx.client.city }}, {{ tx.client.province }} {{ tx.client.postal_code }}
-    			</small>
-			</td>
+                        <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
+                        <small style="color:#666;">
+                            {{ tx.client.phone[:12] }}...<br>
+                            {{ tx.client.city }}, {{ tx.client.province }} {{ tx.client.postal_code }}
+                        </small>
+                    </td>
                     <td>{{ tx.date.strftime('%m/%d %H:%M') }}</td>
                     <td>{{ tx.from_currency }}</td>
                     <td style="color: red; font-weight: bold;">${{ "%.2f"|format(tx.from_amount) }}</td>
@@ -83,7 +96,7 @@
                     <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
                     <td>
                         <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px;">✏️ EDIT</a>
-    <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete?')">🗑️</a>
+                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete?')">🗑️</a>
                     </td>
                 </tr>
             {% endfor %}
@@ -91,7 +104,7 @@
         <p style="margin-top:10px; font-weight:bold;">
             <em>Showing {{ transactions|length }} transactions | 
             Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
-            <span style="color:#27ae60;">Total Profit: ${{ "%.2f"|format((transactions|sum(attribute='from_amount')) * current_fee / 100) }}</span>
+            <span style="color:#27ae60;">Total Profit: ${{ "%.2f"|format((transactions|sum(attribute='from_amount') * current_fee / 100) + (transactions|length * current_flat_fee)) }}</span>
             </em>
         </p>
     {% else %}

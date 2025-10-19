@@ -31,7 +31,7 @@ class Client(db.Model):
     street = db.Column(db.String(100), nullable=False)
     city = db.Column(db.String(50), nullable=False)
     province = db.Column(db.String(10), nullable=False)
-    postal_code = db.Column(db.String(10), nullable=False)  # ✅ NEW!
+    postal_code = db.Column(db.String(10), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
 
@@ -45,7 +45,7 @@ class Transaction(db.Model):
     to_amount = db.Column(db.Float, nullable=False)
     exchange_rate = db.Column(db.Float, nullable=False)
     notes = db.Column(db.Text, nullable=True)
-    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)  # ✅ CHANGED!
+    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
 
 
 with app.app_context():
@@ -54,23 +54,21 @@ with app.app_context():
         admin = User(username='admin', password='admin123', is_admin=True)
         db.session.add(admin)
         db.session.commit()
-    else:
-        admin = User.query.filter_by(username='admin').first()
-        admin.password = 'admin123'
-        db.session.commit()
 
-# ✅ GLOBAL FEE - ADJUSTABLE FROM TRANSACTIONS PAGE
+# ✅ GLOBAL FEES
 FEE_PERCENTAGE = 0.02
+FLAT_FEE_CAD = 5.0
 
 
-@app.route('/set_fee', methods=['POST'])
-def set_fee():
+@app.route('/set_fees', methods=['POST'])
+def set_fees():
     if 'user_id' not in session or not session.get('is_admin'):
         return redirect(url_for('login'))
 
-    global FEE_PERCENTAGE
+    global FEE_PERCENTAGE, FLAT_FEE_CAD
     FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-    flash(f'✅ Fee set to {FEE_PERCENTAGE * 100}%!')
+    FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
+    flash(f'✅ Fees: {FEE_PERCENTAGE * 100}% + ${FLAT_FEE_CAD} CAD!')
     return redirect(url_for('transactions'))
 
 
@@ -97,7 +95,6 @@ def login():
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
-        print(f"DEBUG: Username={username}, Password={password}, DB={user.password if user else 'None'}")
         if user and user.password == password:
             session['user_id'] = user.id
             session['is_admin'] = user.is_admin
@@ -119,13 +116,14 @@ def index():
         return redirect(url_for('login'))
 
     current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
     selected_client = Client.query.get(session.get('selected_client_id'))
 
     if request.method == 'POST':
         if not session.get('selected_client_id'):
             flash('👥 SELECT A CLIENT FIRST!')
             return render_template('index.html', balances=get_balances(), current_fee=current_fee,
-                                   client=selected_client)
+                                   current_flat_fee=current_flat_fee, client=selected_client)
 
         mode = request.form['mode']
         fixed_curr = request.form['fixed_currency']
@@ -149,13 +147,13 @@ def index():
         if current_balance < from_amt:
             flash('❌ Low Balance!')
             return render_template('index.html', balances=get_balances(), current_fee=current_fee,
-                                   client=selected_client)
+                                   current_flat_fee=current_flat_fee, client=selected_client)
 
         new_tx = Transaction(
             from_currency=from_curr, to_currency=to_curr,
             from_amount=from_amt, to_amount=to_amt,
             exchange_rate=rate, notes=notes,
-            client_id=session['selected_client_id']  # ✅ CHANGED!
+            client_id=session['selected_client_id']
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -163,7 +161,8 @@ def index():
         return redirect(url_for('index'))
 
     balances = get_balances()
-    return render_template('index.html', balances=balances, current_fee=current_fee, client=selected_client)
+    return render_template('index.html', balances=balances, current_fee=current_fee,
+                           current_flat_fee=current_flat_fee, client=selected_client)
 
 
 @app.route('/profile')
@@ -174,50 +173,12 @@ def profile():
     total_transactions = Transaction.query.count()
     total_clients = Client.query.count()
     current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
     return render_template('profile.html',
                            user=current_user,
                            total_transactions=total_transactions,
                            total_clients=total_clients,
-                           current_fee=current_fee)
-
-
-@app.route('/clients', methods=['GET', 'POST'])
-def clients():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    search_query = request.args.get('search', '')
-
-    if request.method == 'POST':
-        new_client = Client(
-            first_name=request.form['first_name'],
-            last_name=request.form['last_name'],
-            email=request.form['email'],
-            phone=request.form['phone'],
-            apartment=request.form.get('apartment'),
-            civic_number=request.form['civic_number'],
-            street=request.form['street'],
-            city=request.form['city'],
-            province=request.form['province'],
-            postal_code=request.form['postal_code']  # ✅ NEW!
-        )
-        db.session.add(new_client)
-        db.session.commit()
-        flash(f'✅ Client {new_client.first_name} {new_client.last_name} added!')
-        return redirect(url_for('clients'))
-
-    if search_query:
-        all_clients = Client.query.filter(
-            db.or_(
-                Client.first_name.ilike(f'%{search_query}%'),
-                Client.last_name.ilike(f'%{search_query}%'),
-                Client.email.ilike(f'%{search_query}%')
-            )
-        ).order_by(Client.last_name).all()
-    else:
-        all_clients = Client.query.order_by(Client.last_name).all()
-
-    return render_template('clients.html', clients=all_clients)
+                           current_fee=current_fee, current_flat_fee=current_flat_fee)
 
 
 @app.route('/customers', methods=['GET', 'POST'])
@@ -251,22 +212,23 @@ def customers():
                 Client.first_name.ilike(f'%{search_query}%'),
                 Client.last_name.ilike(f'%{search_query}%'),
                 Client.email.ilike(f'%{search_query}%'),
-                Client.phone.ilike(f'%{search_query}%')  # ✅ PHONE SEARCH!
+                Client.phone.ilike(f'%{search_query}%')
             )
         ).order_by(Client.last_name).all()
     else:
         all_clients = Client.query.order_by(Client.last_name).all()
 
-    Client.phone.ilike(f'%{search_query}%'),  # ✅ ADD THIS LINE
     return render_template('customers.html', clients=all_clients)
 
-@app.route('/select_customer/<int:client_id>')  # ← CHANGED!
-def select_customer(client_id):  # ← CHANGED!
+
+@app.route('/select_customer/<int:client_id>')
+def select_customer(client_id):
     session['selected_client_id'] = client_id
     selected_client = Client.query.get(client_id)
     session['selected_client_name'] = f"{selected_client.first_name} {selected_client.last_name}"
     flash('✅ Client selected!')
     return redirect(url_for('index'))
+
 
 @app.route('/edit_client/<int:client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
@@ -284,8 +246,9 @@ def edit_client(client_id):
         client.postal_code = request.form['postal_code']
         db.session.commit()
         flash(f'✅ {client.first_name} {client.last_name} updated!')
-        return redirect(url_for('clients'))
+        return redirect(url_for('customers'))
     return render_template('edit_client.html', client=client)
+
 
 @app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
 def edit_transaction(tx_id):
@@ -299,6 +262,7 @@ def edit_transaction(tx_id):
         flash(f'✅ Transaction #{tx.id} updated!')
         return redirect(url_for('transactions'))
     return render_template('edit_transaction.html', tx=tx)
+
 
 @app.route('/transactions')
 def transactions():
@@ -332,10 +296,16 @@ def transactions():
         all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
 
     current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
+
+    # ✅ PASS FILTERED DATA TO CSV!
     return render_template('transactions.html', transactions=all_tx,
                            search_date=search_date, search_client=search_client,
                            search_from=search_from, search_to=search_to,
-                           current_fee=current_fee)
+                           current_fee=current_fee, current_flat_fee=current_flat_fee,
+                           filtered_transactions=len(all_tx))  # ✅ NEW!
 
 
 @app.route('/charts')
@@ -388,9 +358,10 @@ def get_live_rate_with_fee(from_curr, to_curr):
         live_rate = data['rates'][to_curr]
         fee_multiplier = 1 + FEE_PERCENTAGE
         fee_rate = live_rate * fee_multiplier
-        return str(round(fee_rate, 4))
+        # ✅ 10 DECIMALS!
+        return str(round(fee_rate, 10))
     except:
-        return str(round(0.85 * (1 + FEE_PERCENTAGE), 4))
+        return str(round(0.85 * (1 + FEE_PERCENTAGE), 10))
 
 
 @app.route('/get_rate/<from_curr>/<to_curr>')
@@ -409,30 +380,67 @@ def get_live_rate(from_curr, to_curr):
 def export_csv():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+
     import csv
     from io import StringIO
-    client_id = session.get('selected_client_id')
-    if session.get('is_admin') and not client_id:
-        all_tx = Transaction.query.order_by(Transaction.date.desc()).all()
-    elif client_id:
-        all_tx = Transaction.query.filter_by(client_id=client_id).order_by(Transaction.date.desc()).all()
+
+    # ✅ GET SAME FILTERS AS TABLE!
+    search_date = request.args.get('date', '')
+    search_client = request.args.get('client_name', '')
+    search_from = request.args.get('from_currency', '')
+    search_to = request.args.get('to_currency', '')
+
+    # ✅ SAME QUERY AS TRANSACTIONS TABLE!
+    query = Transaction.query.order_by(Transaction.date.desc())
+    if session.get('is_admin'):
+        all_tx = query.all()
     else:
-        all_tx = []
+        client_id = session.get('selected_client_id')
+        if client_id:
+            all_tx = query.filter_by(client_id=client_id).all()
+        else:
+            all_tx = []
+
+    # ✅ APPLY SAME FILTERS!
+    if search_date:
+        search_date_obj = datetime.strptime(search_date, '%Y-%m-%d')
+        all_tx = [tx for tx in all_tx if tx.date.date() == search_date_obj.date()]
+    if search_client:
+        all_tx = [tx for tx in all_tx if
+                  search_client.lower() in f"{tx.client.first_name} {tx.client.last_name}".lower()]
+    if search_from:
+        all_tx = [tx for tx in all_tx if tx.from_currency.upper() == search_from.upper()]
+    if search_to:
+        all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
+
+    # ✅ DYNAMIC FILENAME!
+    filename = 'transactions'
+    if search_client: filename += f'_John{search_client[:10]}'
+    if search_from: filename += f'_{search_from}'
+    if search_date: filename += f'_{search_date}'
+    filename += '.csv'
 
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes'])
+    writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
+    total_profit = 0
     for tx in all_tx:
+        profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        total_profit += profit
         writer.writerow([
             tx.id, tx.date.strftime('%Y-%m-%d %H:%M'),
             f"{tx.client.first_name} {tx.client.last_name}",
             tx.from_currency, f"{tx.from_amount:.2f}", tx.to_currency,
-            f"{tx.to_amount:.2f}", f"{tx.exchange_rate:.4f}", tx.notes or ''
+            f"{tx.to_amount:.2f}", f"{tx.exchange_rate:.4f}", tx.notes or '',
+            f"${profit:.2f}"
         ])
+    writer.writerow([])  # Blank line
+    writer.writerow([f'TOTAL ROWS: {len(all_tx)} | TOTAL PROFIT: ${total_profit:.2f}'])
+
     response = app.response_class(
         output.getvalue(),
         mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment;filename=transactions.csv'}
+        headers={'Content-Disposition': f'attachment;filename={filename}'}
     )
     return response
 
@@ -445,6 +453,7 @@ def deposit():
 
     selected_client = Client.query.get(session['selected_client_id'])
     current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
 
     if request.method == 'POST':
         currency = request.form['currency']
@@ -471,7 +480,46 @@ def deposit():
     return render_template('deposit.html',
                            total_deposits=total_deposits,
                            client=selected_client,
-                           current_fee=current_fee)
+                           current_fee=current_fee, current_flat_fee=current_flat_fee)
+
+
+@app.route('/reports')
+def reports():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    # ✅ DAILY PROFIT DATA (30 DAYS)
+    from datetime import timedelta
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    query = Transaction.query.filter(Transaction.date >= thirty_days_ago).order_by(Transaction.date.desc())
+    if session.get('selected_client_id'):
+        query = query.filter_by(client_id=session.get('selected_client_id'))
+    transactions = query.all()
+
+    daily_profit = {}
+    for tx in transactions:
+        date_str = tx.date.strftime('%Y-%m-%d')
+        if date_str not in daily_profit:
+            daily_profit[date_str] = {'count': 0, 'volume': 0, 'profit': 0}
+        daily_profit[date_str]['count'] += 1
+        daily_profit[date_str]['volume'] += tx.from_amount
+        daily_profit[date_str]['profit'] += round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+
+    # ✅ TODAY HIGHLIGHT
+    today = datetime.now().strftime('%Y-%m-%d')
+    week_total = sum(daily['profit'] for daily in list(daily_profit.values())[:7])
+    month_total = sum(daily['profit'] for daily in daily_profit.values())
+
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
+
+    return render_template('reports.html',
+                           daily_profit=daily_profit,
+                           today=today,
+                           week_total=week_total,
+                           month_total=month_total,
+                           current_fee=current_fee,
+                           current_flat_fee=current_flat_fee)
 
 
 if __name__ == '__main__':

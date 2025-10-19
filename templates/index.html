@@ -67,13 +67,13 @@
                 <option value="CAD">🇨🇦 CAD</option>
             </select>
         </td></tr>
-        <tr><td><strong>Rate:</strong></td><td>
-            <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required style="width:80px;">
-            <button type="button" onclick="getLiveRateWithFee()" style="padding:5px; background:#27ae60; color:white; border:none; margin-right:10px;">💰 LIVE + FEE</button>
-            | Fee: 
-            <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" id="fee_input" style="width:50px;">%
-            <button type="button" onclick="setFeeFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none; font-size:12px;">💾 SET</button>
-        </td></tr>
+       <tr><td><strong>Rate:</strong></td><td>
+    <input type="number" name="exchange_rate" step="0.0000000001" placeholder="0.89254321" id="rate" required style="width:100px;">
+    <button type="button" onclick="getLiveRateWithFee()" style="padding:5px; background:#27ae60; color:white; border:none; margin-right:10px;">💰 LIVE + FEES</button>
+    | % Fee: <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" id="fee_input" style="width:50px;">%
+    | Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" id="flat_input" style="width:60px;">CAD
+    <button type="button" onclick="setFeesFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none;">💾 SET</button>
+</td></tr>
         <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
     </table>
     <input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">
@@ -82,91 +82,67 @@
 
 <script>
 let currentFee = {{ current_fee }};
+let currentFlatFee = {{ current_flat_fee }};
 
-function searchClient() {
-    let query = document.getElementById('client_search').value.trim();
-    if (!query) return alert('Enter client name to search!');
-    window.location = `/clients?search=${encodeURIComponent(query)}`;
+function getLiveRateWithFee() {
+    let fromCurr = document.querySelector('select[name="fixed_currency"]').value;
+    let toCurr = document.querySelector('select[name="other_currency"]').value;
+    
+    fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
+        .then(response => response.text())
+        .then(rate => {
+            document.querySelector('input[name="exchange_rate"]').value = rate;
+            alert(`✅ LIVE RATE + ${currentFee}% + $${currentFlatFee} = ${rate}`);
+        });
 }
 
-function showPreview() {
-    let mode = document.querySelector('[name="mode"]:checked').value;
-    let fixedCurr = document.querySelector('[name="fixed_currency"]').value;
-    let fixedAmt = parseFloat(document.querySelector('[name="fixed_amount"]').value);
-    let otherCurr = document.querySelector('[name="other_currency"]').value;
-    let rate = parseFloat(document.querySelector('[name="exchange_rate"]').value);
-    
-    if (!fixedAmt || !rate) return alert('Fill amount & rate first!');
-    {% if not client %}
-        return alert('👥 SELECT A CLIENT FIRST!');
-    {% endif %}
-    
-    let giveCurr, giveAmt, getCurr, getAmt;
-    
-    if (mode == 'client_fixed') {
-        giveCurr = fixedCurr;
-        giveAmt = fixedAmt;
-        getCurr = otherCurr;
-        getAmt = fixedAmt * rate;
-    } else {
-        giveCurr = otherCurr;
-        giveAmt = fixedAmt / rate;
-        getCurr = fixedCurr;
-        getAmt = fixedAmt;
-    }
-    
-    let message = `
-🚀 EXCHANGE PREVIEW (+${currentFee}% FEE)
-━━━━━━━━━━━━━━━━━━━━
-👤 CLIENT: {{ client.first_name if client else 'Unknown' }} {{ client.last_name if client else '' }}
-👤 YOU GIVE: $${giveAmt.toFixed(2)} ${giveCurr}
-💰 YOU GET:  $${getAmt.toFixed(2)} ${getCurr}
-📊 RATE:     1 ${giveCurr} = ${rate.toFixed(4)} ${getCurr}
-⚙️ FEE:      ${currentFee}%
-💸 PROFIT:   $${(giveAmt * currentFee / 100).toFixed(2)}
-━━━━━━━━━━━━━━━━━━━━
-✅ Click CONFIRM button below
-    `;
-    
-    alert(message);
-    document.querySelector('input[type="submit"]').style.background = '#27ae60';
-    setTimeout(() => {
-        document.querySelector('input[type="submit"]').style.background = '#4CAF50';
-    }, 2000);
-}
-
-function setFeeFromDashboard() {
+function setFeesFromDashboard() {
     let feeInput = document.getElementById('fee_input');
+    let flatInput = document.getElementById('flat_input');
     let newFee = parseFloat(feeInput.value);
-    if (!newFee || newFee < 0 || newFee > 20) {
-        return alert('Fee must be 0-20%!');
-    }
+    let newFlat = parseFloat(flatInput.value);
+    if (!newFee || newFee < 0 || newFee > 20) return alert('Fee 0-20%!');
+    if (!newFlat || newFlat < 0 || newFlat > 50) return alert('Flat $0-50!');
     
-    fetch('/set_fee', {
+    fetch('/set_fees', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: `fee_percentage=${newFee}`
+        body: `fee_percentage=${newFee}&flat_fee_cad=${newFlat}`
     }).then(() => {
-        alert(`✅ Fee set to ${newFee}%!`);
+        alert(`✅ Fees: ${newFee}% + $${newFlat} CAD!`);
         location.reload();
     });
 }
 
-function getLiveRateWithFee() {
-    let fixedCurr = document.querySelector('[name="fixed_currency"]').value;
-    let otherCurr = document.querySelector('[name="other_currency"]').value;
-    let mode = document.querySelector('[name="mode"]:checked').value;
-    if (!fixedCurr || !otherCurr) return alert('Select currencies first!');
+function showPreview() {
+    let giveCurr = document.querySelector('select[name="fixed_currency"]').value;
+    let getCurr = document.querySelector('select[name="other_currency"]').value;
+    let giveAmt = parseFloat(document.querySelector('input[name="fixed_amount"]').value);
+    let rate = parseFloat(document.querySelector('input[name="exchange_rate"]').value);
+    let mode = document.querySelector('input[name="mode"]:checked').value;
     
-    let fromCurr = mode == 'client_fixed' ? fixedCurr : otherCurr;
-    let toCurr = mode == 'client_fixed' ? otherCurr : fixedCurr;
+    let getAmt;
+    if (mode == 'client_fixed') {
+        getAmt = giveAmt * rate;
+    } else {
+        getAmt = giveAmt;
+        giveAmt = getAmt / rate;
+    }
     
-    fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
-        .then(r=>r.text())
-        .then(rate=> {
-            document.querySelector('#rate').value = rate;
-            alert(`✅ LIVE RATE + ${currentFee}% FEE!\n1 ${fromCurr} = ${rate} ${toCurr}\n💰 Profit: ${currentFee}%`);
-        });
+    let profit = (giveAmt * currentFee / 100) + currentFlatFee;
+    let message = `
+🚀 EXCHANGE PREVIEW
+━━━━━━━━━━━━━━━━━━━━
+👤 CLIENT: {{ client.first_name if client else 'Unknown' }} {{ client.last_name if client else '' }}
+👤 YOU GIVE: $${giveAmt.toFixed(2)} ${giveCurr}
+💰 YOU GET:  $${getAmt.toFixed(2)} ${getCurr}
+📊 RATE:     1 ${giveCurr} = ${rate.toFixed(8)} ${getCurr}  // ✅ 8 decimals
+⚙️ FEES:     ${currentFee}% + $${currentFlatFee} CAD
+💸 PROFIT:   $${profit.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━
+✅ Click CONFIRM
+    `;
+    alert(message);
 }
 </script>
 {% endblock %}
