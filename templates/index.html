@@ -50,9 +50,12 @@
             </select>
         </td></tr>
         <tr><td><strong>Rate:</strong></td><td>
-            <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required>
-            <button type="button" onclick="getLiveRate()" style="padding:5px; background:#2196F3; color:white; border:none;">🌍 LIVE</button>
-        </td></tr>
+    <input type="number" name="exchange_rate" step="0.001" placeholder="0.85" id="rate" required style="width:80px;">
+    <button type="button" onclick="getLiveRateWithFee()" style="padding:5px; background:#27ae60; color:white; border:none; margin-right:10px;">💰 LIVE + FEE</button>
+    | Fee: 
+    <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" id="fee_input" style="width:50px;">%
+    <button type="button" onclick="setFeeFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none; font-size:12px;">💾 SET</button>
+</td></tr>
         <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2"></textarea></td></tr>
     </table>
 	<input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">
@@ -113,6 +116,43 @@ function showPreview() {
     setTimeout(() => {
         document.querySelector('input[type="submit"]').style.background = '#4CAF50';
     }, 2000);
+}
+
+let currentFee = {{ current_fee }};
+
+function setFeeFromDashboard() {
+    let feeInput = document.getElementById('fee_input');
+    let newFee = parseFloat(feeInput.value);
+    if (!newFee || newFee < 0 || newFee > 20) {
+        return alert('Fee must be 0-20%!');
+    }
+    
+    // UPDATE GLOBAL FEE
+    fetch('/set_fee', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `fee_percentage=${newFee}`
+    }).then(() => {
+        alert(`✅ Fee set to ${newFee}%!`);
+        location.reload(); // Refresh to show new fee
+    });
+}
+
+function getLiveRateWithFee() {
+    let fixedCurr = document.querySelector('[name="fixed_currency"]').value;
+    let otherCurr = document.querySelector('[name="other_currency"]').value;
+    let mode = document.querySelector('[name="mode"]:checked').value;
+    if (!fixedCurr || !otherCurr) return alert('Select currencies first!');
+    
+    let fromCurr = mode == 'client_fixed' ? fixedCurr : otherCurr;
+    let toCurr = mode == 'client_fixed' ? otherCurr : fixedCurr;
+    
+    fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
+        .then(r=>r.text())
+        .then(rate=> {
+            document.querySelector('#rate').value = rate;
+            alert(`✅ LIVE RATE + ${currentFee}% FEE!\n1 ${fromCurr} = ${rate} ${toCurr}\n💰 Profit: ${currentFee}%`);
+        });
 }
 
     </script>

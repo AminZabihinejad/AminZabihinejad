@@ -44,6 +44,20 @@ with app.app_context():
         admin.password = 'admin123'
         db.session.commit()
 
+# ✅ GLOBAL FEE - ADJUSTABLE FROM TRANSACTIONS PAGE
+FEE_PERCENTAGE = 0.02
+
+
+@app.route('/set_fee', methods=['POST'])
+def set_fee():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return redirect(url_for('login'))
+
+    global FEE_PERCENTAGE
+    FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
+    flash(f'✅ Fee set to {FEE_PERCENTAGE * 100}%!')
+    return redirect(url_for('transactions'))
+
 
 def get_balances():
     if 'user_id' not in session:
@@ -66,7 +80,7 @@ def login():
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
-        print(f"DEBUG: Username={username}, Password={password}, DB={user.password if user else 'None'}")  # DEBUG
+        print(f"DEBUG: Username={username}, Password={password}, DB={user.password if user else 'None'}")
         if user and user.password == password:
             session['user_id'] = user.id
             session['is_admin'] = user.is_admin
@@ -86,6 +100,8 @@ def logout():
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
 
     if request.method == 'POST':
         mode = request.form['mode']
@@ -112,7 +128,7 @@ def index():
         current_balance = get_balances().get(from_curr, 0)
         if current_balance < from_amt:
             flash('invalid transaction, Low Balance')
-            return render_template('index.html', balances=get_balances())
+            return render_template('index.html', balances=get_balances(), current_fee=current_fee)
 
         new_tx = Transaction(
             from_currency=from_curr, to_currency=to_curr,
@@ -126,7 +142,7 @@ def index():
         return redirect(url_for('index'))
 
     balances = get_balances()
-    return render_template('index.html', balances=balances)
+    return render_template('index.html', balances=balances, current_fee=current_fee)
 
 
 @app.route('/profile')
@@ -136,10 +152,12 @@ def profile():
     current_user = User.query.get(session['user_id'])
     total_transactions = Transaction.query.filter_by(user_id=current_user.id).count()
     total_users = User.query.count()
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
     return render_template('profile.html',
                            user=current_user,
                            total_transactions=total_transactions,
-                           total_users=total_users)
+                           total_users=total_users,
+                           current_fee=current_fee)
 
 
 @app.route('/transactions')
@@ -164,8 +182,10 @@ def transactions():
     if search_to:
         all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
 
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
     return render_template('transactions.html', transactions=all_tx,
-                           search_date=search_date, search_from=search_from, search_to=search_to)
+                           search_date=search_date, search_from=search_from,
+                           search_to=search_to, current_fee=current_fee)
 
 
 @app.route('/charts')
@@ -205,6 +225,23 @@ def delete_transaction(tx_id):
     db.session.delete(tx)
     db.session.commit()
     return redirect(url_for('transactions'))
+
+
+@app.route('/get_live_rate_with_fee/<from_curr>/<to_curr>')
+def get_live_rate_with_fee(from_curr, to_curr):
+    try:
+        url = f"https://api.exchangerate-api.com/v4/latest/{from_curr}"
+        response = requests.get(url)
+        data = response.json()
+        live_rate = data['rates'][to_curr]
+
+        # ✅ ADJUSTABLE FEE!
+        fee_multiplier = 1 + FEE_PERCENTAGE
+        fee_rate = live_rate * fee_multiplier
+
+        return str(round(fee_rate, 4))
+    except:
+        return str(round(0.85 * (1 + FEE_PERCENTAGE), 4))
 
 
 @app.route('/get_rate/<from_curr>/<to_curr>')

@@ -5,6 +5,21 @@
 {% block content %}
     <h2>⚙️ Transaction Operations</h2>
     
+    <!-- ✅ FEE CONTROL - ADMIN ONLY -->
+    {% if session.is_admin %}
+    <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+        <strong>💰 Exchange Fee Control:</strong>
+        <form method="POST" action="{{ url_for('set_fee') }}" style="display:inline;">
+            <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" style="width:60px; padding:5px;">%
+            <input type="submit" value="💾 SET FEE" style="padding:8px 15px; background:#27ae60; color:white; border:none; border-radius:3px;">
+        </form>
+        <p style="margin:5px 0; font-weight:bold;">
+            <strong>Current:</strong> {{ current_fee }}% | 
+            <strong>Profit per $100:</strong> ${{ "%.2f"|format(100 * current_fee / 100) }}
+        </p>
+    </div>
+    {% endif %}
+    
     <!-- SEARCH FORM -->
     <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
@@ -27,10 +42,13 @@
                 <th>→ To</th>
                 <th>Amount</th>
                 <th>Rate</th>
+                <th>Fee</th>
+                <th>Profit</th>
                 <th>Notes</th>
                 <th>Action</th>
             </tr>
             {% for tx in transactions %}
+                {% set profit = ((tx.from_amount * tx.exchange_rate * 0.02)|round(2)) %}
                 <tr>
                     <td>{{ tx.id }}</td>
                     <td>{{ tx.date.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -39,6 +57,8 @@
                     <td>{{ tx.to_currency }}</td>
                     <td style="color: green;">${{ "%.2f"|format(tx.to_amount) }}</td>
                     <td>{{ "%.4f"|format(tx.exchange_rate) }}</td>
+                    <td>{{ current_fee }}%</td>
+                    <td style="color: #27ae60; font-weight: bold;">${{ "%.2f"|format(profit) }}</td>
                     <td>{{ tx.notes or '' }}</td>
                     <td>
                         <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
@@ -50,7 +70,7 @@
                 </tr>
             {% endfor %}
         </table>
-        <p style="margin-top:10px;"><em>Showing {{ transactions|length }} transactions</em></p>
+        <p style="margin-top:10px;"><em>Showing {{ transactions|length }} transactions | Total Profit: ${{ "%.2f"|format(transactions|sum(attribute='from_amount') * current_fee / 100) }}</em></p>
     {% else %}
         <div style="text-align:center; padding:30px; color:#666;">
             <h3>No transactions found!</h3>
