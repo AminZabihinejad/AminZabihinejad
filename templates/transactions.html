@@ -116,11 +116,12 @@
             {% endfor %}
         </table>
         <p style="margin-top:10px; font-weight:bold;">
-            <em>Showing {{ transactions|length }} transactions | 
-            Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
-            <span style="color:#27ae60;">Total Profit: ${{ "%.2f"|format((transactions|sum(attribute='from_amount') * current_fee / 100) + (transactions|length * current_flat_fee)) }}</span>
-            </em>
-        </p>
+    <em>Showing {{ transactions|length }} transactions | 
+    {% set exchange_txs = transactions|selectattr('from_amount', '>', 0)|list %}
+    Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
+    <span style="color:#27ae60;">Total Profit: ${{ "%.2f"|format((exchange_txs|sum(attribute='from_amount') * current_fee / 100) + (exchange_txs|length * current_flat_fee)) }} ({{ exchange_txs|length }} exchanges)</span>
+    </em>
+</p>
     {% else %}
         <div style="text-align:center; padding:30px; color:#666;">
             <h3>No transactions found!</h3>
