@@ -24,7 +24,7 @@
     {% endif %}
 </div>
 
-<!-- 🔍 ALWAYS SEARCH + SELECTED -->
+<!-- 🔍 CLIENT FILTER -->
 <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin:20px 0;">
     {% if client %}
         <strong>👥 Customer:</strong>
@@ -42,6 +42,27 @@
         <a href="{{ url_for('customers') }}" style="margin-left:10px; color:#27ae60;">+ ADD NEW</a>
     {% endif %}
 </div>
+
+<!-- ✅ CLIENT NOTES + RISK DISPLAY (SIMPLE & VISIBLE!) -->
+{% if client %}
+<div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <strong>📝 {{ client.first_name }} {{ client.last_name }} Notes:</strong>
+    {% if client.notes %}
+        <div style="background:#f9f9f9; padding:10px; border-radius:5px; margin-top:5px; font-size:14px; max-height:100px; overflow-y:auto; border-left:4px solid #f39c12;">
+            {{ client.notes }}
+        </div>
+    {% else %}
+        <span style="color:#999;">— No notes —</span>
+    {% endif %}
+    <br><strong>Risk Level:</strong> 
+    {% if client.risk_level == 'low risk' %}<span style="color:green;">🟢 LOW</span>
+    {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">🟡 MEDIUM</span>
+    {% elif client.risk_level == 'high risk' %}<span style="color:red; font-weight:bold;">🟠 HIGH</span>
+    {% else %}<span style="color:red; font-weight:bold;">🔴 ON HOLD</span>{% endif %}
+    | <a href="{{ url_for('edit_client', client_id=client.id) }}" style="color:#f39c12;">✏️ Edit Profile</a>
+</div>
+{% endif %}
+
 <h2>💸 Add Transaction</h2>
 <form method="POST">
     <!-- MODE SELECTOR -->
@@ -89,7 +110,8 @@
             else cb.checked = false;
         }
     </script>
-</td></tr>        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
+</td></tr>        
+        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
     </table>
     <input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">
     <input type="submit" value="💸 CONFIRM" style="width:48%; padding:15px; background:#4CAF50; color:white; border:none;">
@@ -151,7 +173,7 @@ function showPreview() {
 👤 CLIENT: {{ client.first_name if client else 'Unknown' }} {{ client.last_name if client else '' }}
 👤 YOU GIVE: $${giveAmt.toFixed(2)} ${giveCurr}
 💰 YOU GET:  $${getAmt.toFixed(2)} ${getCurr}
-📊 RATE:     1 ${giveCurr} = ${rate.toFixed(8)} ${getCurr}  // ✅ 8 decimals
+📊 RATE:     1 ${giveCurr} = ${rate.toFixed(8)} ${getCurr}
 ⚙️ FEES:     ${currentFee}% + $${currentFlatFee} CAD
 💸 PROFIT:   $${profit.toFixed(2)}
 ━━━━━━━━━━━━━━━━━━━━

@@ -32,6 +32,8 @@ class Client(db.Model):
     city = db.Column(db.String(50), nullable=False)
     province = db.Column(db.String(10), nullable=False)
     postal_code = db.Column(db.String(10), nullable=False)
+    risk_level = db.Column(db.String(20), default='low risk')  # ✅ NEW!
+    notes = db.Column(db.Text, nullable=True)  # ✅ NEW!
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
 
@@ -123,6 +125,7 @@ def index():
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
     selected_client = Client.query.get(session.get('selected_client_id'))
+    clients = Client.query.all()  # ✅ ADD THIS!
 
     if request.method == 'POST':
         if not session.get('selected_client_id'):
@@ -154,7 +157,11 @@ def index():
             return render_template('index.html', balances=get_balances(), current_fee=current_fee,
                                    current_flat_fee=current_flat_fee, client=selected_client)
 
-        is_fintrac = request.form.get('is_fintrac', False) == 'on'  # ✅ DASHBOARD CHECKBOX!
+        is_fintrac = request.form.get('is_fintrac', False) == 'on'
+        client = Client.query.get(session['selected_client_id'])
+        if is_fintrac:  # ✅ $10K+ = HIGH RISK!
+            client.risk_level = 'high risk'
+            db.session.commit()
 
         new_tx = Transaction(
             from_currency=from_curr, to_currency=to_curr,
@@ -207,7 +214,9 @@ def customers():
             street=request.form['street'],
             city=request.form['city'],
             province=request.form['province'],
-            postal_code=request.form['postal_code']
+            postal_code=request.form['postal_code'],
+            risk_level=request.form['risk_level'],  # ✅ NEW!
+            notes=request.form.get('notes')  # ✅ NEW!
         )
         db.session.add(new_client)
         db.session.commit()
@@ -252,6 +261,8 @@ def edit_client(client_id):
         client.city = request.form['city']
         client.province = request.form['province']
         client.postal_code = request.form['postal_code']
+        client.risk_level = request.form['risk_level']  # ✅ FIXED!
+        client.notes = request.form.get('notes')  # ✅ FIXED!
         db.session.commit()
         flash(f'✅ {client.first_name} {client.last_name} updated!')
         return redirect(url_for('customers'))
