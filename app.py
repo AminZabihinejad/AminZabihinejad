@@ -49,6 +49,7 @@ class Transaction(db.Model):
     notes = db.Column(db.Text, nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)  # ✅ NEW!
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
+    status = db.Column(db.String(10), default='closed')  # ← CHANGE TO CLOSED!
 
 
 with app.app_context():
@@ -168,7 +169,8 @@ def index():
             from_amount=from_amt, to_amount=to_amt,
             exchange_rate=rate, notes=notes,
             is_fintrac=is_fintrac,  # ✅ USE CHECKBOX!
-            client_id=session['selected_client_id']
+            client_id=session['selected_client_id'],
+            status=request.form.get('status', 'closed'),  # ← DEFAULT CLOSED!
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -293,6 +295,8 @@ def transactions():
     search_client = request.args.get('client_name', '')
     search_from = request.args.get('from_currency', '')
     search_to = request.args.get('to_currency', '')
+    search_fintrac = request.args.get('fintrac', '')  # ← ADD THIS!
+    search_status = request.args.get('status', '')     # ← ADD THIS!
 
     query = Transaction.query.order_by(Transaction.date.desc())
     if session.get('is_admin'):
@@ -303,6 +307,17 @@ def transactions():
             all_tx = query.filter_by(client_id=client_id).all()
         else:
             all_tx = []
+
+    # ✅ APPLY ALL FILTERS!
+    if search_fintrac == 'yes':
+        all_tx = [tx for tx in all_tx if tx.is_fintrac]           # ← ADD THIS!
+    elif search_fintrac == 'no':
+        all_tx = [tx for tx in all_tx if not tx.is_fintrac]       # ← ADD THIS!
+
+    if search_status == 'closed':
+        all_tx = [tx for tx in all_tx if tx.status == 'closed']   # ← ADD THIS!
+    elif search_status == 'pending':
+        all_tx = [tx for tx in all_tx if tx.status == 'pending']  # ← ADD THIS!
 
     if search_date:
         search_date_obj = datetime.strptime(search_date, '%Y-%m-%d')
@@ -317,16 +332,23 @@ def transactions():
 
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
 
-    # ✅ PASS FILTERED DATA TO CSV!
     return render_template('transactions.html', transactions=all_tx,
                            search_date=search_date, search_client=search_client,
                            search_from=search_from, search_to=search_to,
+                           search_fintrac=search_fintrac, search_status=search_status,  # ← ADD THIS!
                            current_fee=current_fee, current_flat_fee=current_flat_fee,
-                           filtered_transactions=len(all_tx))  # ✅ NEW!
+                           filtered_transactions=len(all_tx))
 
+@app.route('/update_status/<int:tx_id>', methods=['POST'])
+def update_status(tx_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    tx = Transaction.query.get_or_404(tx_id)
+    tx.status = request.form['status']
+    db.session.commit()
+    flash(f'✅ Transaction #{tx.id} status: {tx.status.upper()}')
+    return redirect(url_for('transactions'))
 
 @app.route('/charts')
 def charts():
@@ -410,7 +432,7 @@ def export_csv():
     search_from = request.args.get('from_currency', '')
     search_to = request.args.get('to_currency', '')
     search_fintrac = request.args.get('fintrac', '')
-
+    search_status = request.args.get('status', '')
     # ✅ SAME QUERY AS TRANSACTIONS TABLE!
     query = Transaction.query.order_by(Transaction.date.desc())
     if session.get('is_admin'):
@@ -425,6 +447,10 @@ def export_csv():
     if search_fintrac == 'yes':
         all_tx = [tx for tx in all_tx if tx.is_fintrac]
     elif search_fintrac == 'no':
+        if search_status == 'closed':
+            all_tx = [tx for tx in all_tx if tx.status == 'closed']
+        elif search_status == 'pending':
+            all_tx = [tx for tx in all_tx if tx.status == 'pending']
         all_tx = [tx for tx in all_tx if not tx.is_fintrac]
     # ✅ APPLY SAME FILTERS!
     if search_date:
@@ -490,7 +516,8 @@ def deposit():
             from_amount=0, to_amount=amount,
             exchange_rate=1.0, notes=notes,
             is_fintrac=(amount >= 10000),  # ✅ AUTO $10K+!
-            client_id=session['selected_client_id']
+            client_id=session['selected_client_id'],
+            status=request.form.get('status', 'closed'),  # ← DEFAULT CLOSED!
         )
         db.session.add(new_tx)
         db.session.commit()

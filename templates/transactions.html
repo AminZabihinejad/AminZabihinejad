@@ -33,7 +33,7 @@
         {% endif %}
     </div>
     
-    <!-- ✅ SEARCH FORM WITH ALL FIELDS -->
+    <!-- ✅ SEARCH FORM - 2 STATES ONLY! -->
     <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
             <strong>🔍 Search:</strong>
@@ -46,20 +46,26 @@
                 <option value="yes" {{ 'selected' if request.args.get('fintrac') == 'yes' }}>🚨 YES</option>
                 <option value="no" {{ 'selected' if request.args.get('fintrac') == 'no' }}>✅ NO</option>
             </select>
+            STATUS: <select name="status" style="margin-right:10px;">
+                <option value="">All</option>
+                <option value="closed" {{ 'selected' if request.args.get('status') == 'closed' }}>🟢 CLOSED</option>
+                <option value="pending" {{ 'selected' if request.args.get('status') == 'pending' }}>⏳ PENDING</option>
+            </select>
             <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none;">
             <a href="{{ url_for('transactions') }}" style="color:blue; margin-left:10px;">[Clear All]</a>
         </form>
     </div>
 
     {% if transactions %}
-        <!-- ✅ EXPORT BUTTON WITH ALL FILTERS! -->
+        <!-- ✅ EXPORT BUTTON -->
         <div style="text-align:center; margin-bottom:15px;">
             <a href="{{ url_for('export_csv', 
                 date=search_date, 
                 client_name=search_client, 
                 from_currency=search_from, 
                 to_currency=search_to, 
-                fintrac=request.args.get('fintrac', '')) }}" 
+                fintrac=request.args.get('fintrac', ''),
+                status=request.args.get('status', '')) }}" 
                style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
                 💾 EXPORT {{ transactions|length }} FILTERED TRANSACTIONS CSV
             </a>
@@ -78,12 +84,13 @@
                 <th>Fee</th>
                 <th>Profit</th>
                 <th>FINTRAC</th>
+                <th>Status</th>
                 <th>Notes</th>
                 <th>Action</th>
             </tr>
             {% for tx in transactions %}
                 {% set profit = ((tx.from_amount * current_fee / 100) + current_flat_fee)|round(2) if tx.from_amount > 0 else 0 %}
-                <tr>
+                <tr {% if tx.status == 'pending' %}style="background:#fff2cc;"{% endif %}>
                     <td>{{ tx.id }}</td>
                     <td style="white-space: nowrap;">
                         <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
@@ -106,6 +113,14 @@
                         {% else %}
                             <span style="background:#27ae60; color:white; padding:3px 6px; border-radius:3px;">✅ NO</span>
                         {% endif %}
+                    </td>
+                    <td style="text-align:center;">
+                        <form method="POST" action="{{ url_for('update_status', tx_id=tx.id) }}" style="display:inline;">
+                            <select name="status" onchange="this.form.submit()" style="font-size:11px; padding:2px; border:1px solid #ddd;">
+                                <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>🟢 CLOSED</option>
+                                <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>⏳ PENDING</option>
+                            </select>
+                        </form>
                     </td>
                     <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
                     <td>

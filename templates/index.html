@@ -43,7 +43,7 @@
     {% endif %}
 </div>
 
-<!-- ✅ CLIENT NOTES + RISK DISPLAY (SIMPLE & VISIBLE!) -->
+<!-- ✅ CLIENT NOTES + RISK DISPLAY -->
 {% if client %}
 <div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <strong>📝 {{ client.first_name }} {{ client.last_name }} Notes:</strong>
@@ -63,9 +63,39 @@
 </div>
 {% endif %}
 
+<!-- ✅ OPEN TRANSACTIONS TABLE -->
+{% if open_transactions %}
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>📋 Open Transactions ({{ open_transactions|length }})</h3>
+    <table style="width:100%; font-size:12px; border-collapse: collapse;">
+        <tr style="background:#f2f2f2;">
+            <th style="border:1px solid #ddd; padding:8px;">ID</th>
+            <th style="border:1px solid #ddd; padding:8px;">Client</th>
+            <th style="border:1px solid #ddd; padding:8px;">USD</th>
+            <th style="border:1px solid #ddd; padding:8px;">{{ other_currency }}</th>
+            <th style="border:1px solid #ddd; padding:8px;">Status</th>
+            <th style="border:1px solid #ddd; padding:8px;">Action</th>
+        </tr>
+        {% for tx in open_transactions %}
+        <tr style="border:1px solid #ddd; {% if tx.is_fintrac %}background:#fff3cd;{% endif %}">
+            <td style="padding:8px;">{{ tx.id }}</td>
+            <td style="padding:8px;">{{ tx.client.first_name }} {{ tx.client.last_name }}</td>
+            <td style="padding:8px;">${{ "%.2f"|format(tx.fixed_amount) }}</td>
+            <td style="padding:8px;">{{ other_currency }}${{ "%.2f"|format(tx.to_amount) }}</td>
+            <td style="padding:8px; color:red; font-weight:bold;">🔴 OPEN</td>
+            <td style="padding:8px;">
+                <form method="POST" action="{{ url_for('close_transaction', tx_id=tx.id) }}" style="display:inline;">
+                    <button type="submit" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:3px;">✅ CLOSE</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
 <h2>💸 Add Transaction</h2>
 <form method="POST">
-    <!-- MODE SELECTOR -->
     <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin-bottom:15px;">
         <label><input type="radio" name="mode" value="client_fixed" checked> 💰 Client Fixed Amount</label>
         <label style="margin-left:20px;"><input type="radio" name="mode" value="bank_fixed"> 🏦 Bank Fixed Amount</label>
@@ -98,16 +128,16 @@
 <tr><td><strong>FINTRAC:</strong></td><td>
     <input type="checkbox" name="is_fintrac" id="fintrac_cb"> 
     <label for="fintrac_cb" style="color:#e74c3c; font-weight:bold;">🚨 Report to FINTRAC ($10K+)</label>
+	<tr><td><strong>Status:</strong></td><td>
+    <select name="status">
+        <option value="closed" selected>🟢 CLOSED</option>
+        <option value="pending">⏳ PENDING</option>
+    </select>
+</td></tr>
     <script>
-        // ✅ AUTO CHECK $10K+
-        let amount = document.querySelector('input[name="fixed_amount"]').value;
-        let cb = document.getElementById('fintrac_cb');
-        if (parseFloat(amount) >= 10000) cb.checked = true;
-        
-        // ✅ UPDATE ON AMOUNT CHANGE
         document.querySelector('input[name="fixed_amount"]').oninput = function() {
-            if (parseFloat(this.value) >= 10000) cb.checked = true;
-            else cb.checked = false;
+            if (parseFloat(this.value) >= 10000) document.getElementById('fintrac_cb').checked = true;
+            else document.getElementById('fintrac_cb').checked = false;
         }
     </script>
 </td></tr>        
@@ -124,7 +154,6 @@ let currentFlatFee = {{ current_flat_fee }};
 function getLiveRateWithFee() {
     let fromCurr = document.querySelector('select[name="fixed_currency"]').value;
     let toCurr = document.querySelector('select[name="other_currency"]').value;
-    
     fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
         .then(response => response.text())
         .then(rate => {
