@@ -20,7 +20,7 @@
     </form>
 </div>
 
-<!-- ADD CUSTOMER FORM - 3 ROWS NOTES! -->
+<!-- ADD CUSTOMER FORM - FIXED HTML + ID FIELDS -->
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h3>+ New Customer</h3>
     <form method="POST">
@@ -55,6 +55,12 @@
                 <td>Postal:</td>
                 <td><input name="postal_code" required placeholder="M5V 2T6" style="width:80px;"></td>
             </tr>
+            <tr>
+                <td>ID Card:</td>
+                <td><input type="text" name="id_card_number" placeholder="123456789" style="width:150px;"></td>
+                <td>Expiry:</td>
+                <td><input type="date" name="id_expiry_date" style="width:150px;"></td>
+            </tr>
             <tr style="background:#fff3cd;">
                 <td><strong>Risk Level:</strong></td>
                 <td>
@@ -76,11 +82,11 @@
     </form>
 </div>
 
-<!-- CUSTOMER LIST WITH 3-ROWS SCROLL NOTES -->
+<!-- CUSTOMER LIST WITH ID CARD + PENDING COUNT -->
 <h3>📋 All Customers ({{ clients|length }})</h3>
 <table style="width:100%; border-collapse:collapse; font-size:12px;">
     <tr style="background:#f2f2f2;">
-        <th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>City</th><th>Risk</th><th style="width:120px;">Notes</th><th>Tx</th><th>Action</th>
+        <th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>City</th><th>ID Card</th><th>Risk</th><th style="width:120px;">Notes</th><th>Tx</th><th>Pending</th><th>Action</th>
     </tr>
     {% for client in clients %}
     <tr style="{% if client.risk_level == 'high risk' or client.risk_level == 'on hold' %}background:#ffebee;{% endif %}">
@@ -89,6 +95,18 @@
         <td>{{ client.email }}</td>
         <td>{{ client.phone[:12] }}...</td>
         <td>{{ client.city }}</td>
+        <td style="white-space:nowrap; font-size:11px;">
+            {% if client.id_card_number %}
+                <strong>{{ client.id_card_number[:4] }}...{{ client.id_card_number[-4:] }}</strong>
+                {% if client.id_expiry_date %}
+                    <br><small style="{% if client.id_expiry_date < (now or date()) %}color:red;{% else %}color:#666;{% endif %}">
+                        Exp: {{ client.id_expiry_date.strftime('%m/%y') }}
+                    </small>
+                {% endif %}
+            {% else %}
+                <span style="color:#999;">—</span>
+            {% endif %}
+        </td>
         <td style="text-align:center; font-weight:bold;">
             {% if client.risk_level == 'low risk' %}<span style="color:green;">🟢 LOW</span>
             {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">🟡 MED</span>
@@ -105,6 +123,14 @@
             {% endif %}
         </td>
         <td>{{ client.transactions|length }}</td>
+        <td style="text-align:center;">
+            {% set pending_tx = client.transactions|selectattr('status', 'equalto', 'pending')|list %}
+            {% if pending_tx|length > 0 %}
+                <span style="color:red; font-weight:bold;">🚨 {{ pending_tx|length }}</span>
+            {% else %}
+                <span style="color:green;">✅ 0</span>
+            {% endif %}
+        </td>
         <td>
             <a href="{{ url_for('select_customer', client_id=client.id) }}" style="background:#3498db; color:white; padding:5px 8px;">SELECT</a>
             <a href="{{ url_for('edit_client', client_id=client.id) }}" style="background:#f39c12; color:white; padding:5px 8px; margin-left:5px;">✏️ EDIT</a>

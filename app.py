@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, date
 import requests
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -32,7 +32,9 @@ class Client(db.Model):
     city = db.Column(db.String(50), nullable=False)
     province = db.Column(db.String(10), nullable=False)
     postal_code = db.Column(db.String(10), nullable=False)
-    risk_level = db.Column(db.String(20), default='low risk')  # ✅ NEW!
+    id_card_number = db.Column(db.String(20))  # ← ADD!
+    id_expiry_date = db.Column(db.Date)  # ← ADD!
+    risk_level = db.Column(db.String(20), default='low risk')
     notes = db.Column(db.Text, nullable=True)  # ✅ NEW!
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
@@ -204,8 +206,16 @@ def customers():
         return redirect(url_for('login'))
 
     search_query = request.args.get('search', '')
+    risk_filter = request.args.get('risk_level', '')  # ← ADD RISK FILTER!
 
     if request.method == 'POST':
+        # ✅ FIX DATE STRING → DATE OBJECT!
+        id_expiry_str = request.form.get('id_expiry_date')
+        id_expiry_date = None
+        if id_expiry_str:  # If not empty
+            from datetime import datetime
+            id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
+
         new_client = Client(
             first_name=request.form['first_name'],
             last_name=request.form['last_name'],
@@ -217,28 +227,34 @@ def customers():
             city=request.form['city'],
             province=request.form['province'],
             postal_code=request.form['postal_code'],
-            risk_level=request.form['risk_level'],  # ✅ NEW!
-            notes=request.form.get('notes')  # ✅ NEW!
+            id_card_number=request.form.get('id_card_number'),
+            id_expiry_date=id_expiry_date,  # ← FIXED! DATE OBJECT
+            risk_level=request.form['risk_level'],
+            notes=request.form.get('notes')
         )
         db.session.add(new_client)
         db.session.commit()
         flash(f'✅ Customer {new_client.first_name} {new_client.last_name} added!')
         return redirect(url_for('customers'))
 
+    # ✅ FULL SEARCH + RISK FILTER!
+    query = Client.query.order_by(Client.last_name)
     if search_query:
-        all_clients = Client.query.filter(
+        query = query.filter(
             db.or_(
                 Client.first_name.ilike(f'%{search_query}%'),
                 Client.last_name.ilike(f'%{search_query}%'),
                 Client.email.ilike(f'%{search_query}%'),
                 Client.phone.ilike(f'%{search_query}%')
             )
-        ).order_by(Client.last_name).all()
-    else:
-        all_clients = Client.query.order_by(Client.last_name).all()
+        )
+    if risk_filter:
+        query = query.filter_by(risk_level=risk_filter)
 
-    return render_template('customers.html', clients=all_clients)
+    all_clients = query.all()
 
+    from datetime import date
+    return render_template('customers.html', clients=all_clients, search=search_query, now=date.today())
 
 @app.route('/select_customer/<int:client_id>')
 def select_customer(client_id):
@@ -263,6 +279,11 @@ def edit_client(client_id):
         client.city = request.form['city']
         client.province = request.form['province']
         client.postal_code = request.form['postal_code']
+        client.id_card_number = request.form.get('id_card_number')  # ← ADD!
+        client.id_expiry_date = request.form.get('id_expiry_date')
+        if client.id_expiry_date:  # Convert string to date
+            from datetime import datetime
+            client.id_expiry_date = datetime.strptime(client.id_expiry_date, '%Y-%m-%d').date()
         client.risk_level = request.form['risk_level']  # ✅ FIXED!
         client.notes = request.form.get('notes')  # ✅ FIXED!
         db.session.commit()
