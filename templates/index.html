@@ -95,7 +95,7 @@
 {% endif %}
 
 <h2>💸 Add Transaction</h2>
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
     <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin-bottom:15px;">
         <label><input type="radio" name="mode" value="client_fixed" checked> 💰 Client Fixed Amount</label>
         <label style="margin-left:20px;"><input type="radio" name="mode" value="bank_fixed"> 🏦 Bank Fixed Amount</label>
@@ -107,40 +107,35 @@
                 <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
                 <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
                 <option value="CAD">🇨🇦 CAD</option>
-            </select>
-        </td></tr>
-        <tr><td><strong>Fixed Amount:</strong></td>
-            <td><input type="number" name="fixed_amount" step="0.01" placeholder="100" required></td></tr>
+            </select></td></tr>
+        <tr><td><strong>Fixed Amount:</strong></td><td><input type="number" name="fixed_amount" step="0.01" placeholder="100" required></td></tr>
         <tr><td><strong>{{ "To" if request.form.get('mode') != 'bank_fixed' else "From" }}:</strong></td>
             <td><select name="other_currency" required>
                 <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
                 <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
                 <option value="CAD">🇨🇦 CAD</option>
+            </select></td></tr>
+        <!-- ✅ FEE LINE RESTORED! -->
+        <tr><td><strong>Rate:</strong></td><td>
+            <input type="number" name="exchange_rate" step="0.0000000001" placeholder="0.89254321" id="rate" required style="width:100px;">
+            <button type="button" onclick="getLiveRateWithFee()" style="padding:5px; background:#27ae60; color:white; border:none; margin-right:10px;">💰 LIVE + FEES</button>
+            | % Fee: <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" id="fee_input" style="width:50px;">%
+            | Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" id="flat_input" style="width:60px;">CAD
+            <button type="button" onclick="setFeesFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none;">💾 SET</button>
+        </td></tr>
+        <tr><td><strong>FINTRAC:</strong></td><td>
+            <input type="checkbox" name="is_fintrac"> 
+            <label style="color:#e74c3c; font-weight:bold;">🚨 Report to FINTRAC ($10K+)</label>
+        </td></tr>
+        <tr><td><strong>Status:</strong></td><td>
+            <select name="status">
+                <option value="closed" selected>🟢 CLOSED</option>
+                <option value="pending">⏳ PENDING</option>
             </select>
         </td></tr>
-       <tr><td><strong>Rate:</strong></td><td>
-    <input type="number" name="exchange_rate" step="0.0000000001" placeholder="0.89254321" id="rate" required style="width:100px;">
-    <button type="button" onclick="getLiveRateWithFee()" style="padding:5px; background:#27ae60; color:white; border:none; margin-right:10px;">💰 LIVE + FEES</button>
-    | % Fee: <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" id="fee_input" style="width:50px;">%
-    | Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" id="flat_input" style="width:60px;">CAD
-    <button type="button" onclick="setFeesFromDashboard()" style="padding:3px 8px; background:#e74c3c; color:white; border:none;">💾 SET</button>
-</td></tr>
-<tr><td><strong>FINTRAC:</strong></td><td>
-    <input type="checkbox" name="is_fintrac" id="fintrac_cb"> 
-    <label for="fintrac_cb" style="color:#e74c3c; font-weight:bold;">🚨 Report to FINTRAC ($10K+)</label>
-	<tr><td><strong>Status:</strong></td><td>
-    <select name="status">
-        <option value="closed" selected>🟢 CLOSED</option>
-        <option value="pending">⏳ PENDING</option>
-    </select>
-</td></tr>
-    <script>
-        document.querySelector('input[name="fixed_amount"]').oninput = function() {
-            if (parseFloat(this.value) >= 10000) document.getElementById('fintrac_cb').checked = true;
-            else document.getElementById('fintrac_cb').checked = false;
-        }
-    </script>
-</td></tr>        
+        <tr><td><strong>Receipt:</strong></td><td>
+            <input type="file" name="receipt" accept=".pdf,.jpg,.jpeg,.png">
+        </td></tr>
         <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2" placeholder="Additional notes..."></textarea></td></tr>
     </table>
     <input type="button" value="👁️ PREVIEW" onclick="showPreview()" style="width:48%; padding:15px; background:#2196F3; color:white; border:none;">

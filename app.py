@@ -1,15 +1,23 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 import requests
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask import send_from_directory
+from werkzeug.utils import secure_filename  # ← ADD!
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'piggybank2025'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+import os
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
 
 class User(db.Model):
@@ -51,6 +59,7 @@ class Transaction(db.Model):
     notes = db.Column(db.Text, nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)  # ✅ NEW!
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
+    receipt_filename = db.Column(db.String(100))  # ← ADD! PDF/JPG filename
     status = db.Column(db.String(10), default='closed')  # ← CHANGE TO CLOSED!
 
 
@@ -65,6 +74,8 @@ with app.app_context():
 FEE_PERCENTAGE = 0.02
 FLAT_FEE_CAD = 5.0
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/set_fees', methods=['POST'])
 def set_fees():
@@ -122,6 +133,7 @@ def logout():
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    import uuid
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
@@ -142,6 +154,7 @@ def index():
         other_curr = request.form['other_currency']
         rate = float(request.form['exchange_rate'])
         notes = request.form.get('notes', f'For {selected_client.first_name} {selected_client.last_name}')
+        status = request.form.get('status', 'closed')
 
         if mode == 'client_fixed':
             from_curr = fixed_curr
@@ -162,17 +175,38 @@ def index():
 
         is_fintrac = request.form.get('is_fintrac', False) == 'on'
         client = Client.query.get(session['selected_client_id'])
-        if is_fintrac:  # ✅ $10K+ = HIGH RISK!
+        if is_fintrac:
             client.risk_level = 'high risk'
             db.session.commit()
 
+        # ✅ UPLOAD RECEIPT BEFORE new_tx!
+        # ✅ FULL DEBUG UPLOAD!
+        receipt_filename = None
+        print(f"🔍 ALL FILES: {list(request.files.keys())}")
+        if 'receipt' in request.files:
+            file = request.files['receipt']
+            print(f"🔍 RECEIPT: {file.filename} | SIZE: {file.content_length}")
+            if file and allowed_file(file.filename) and file.filename != '':
+                filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}_{secure_filename(file.filename)}"
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(file_path)
+                receipt_filename = filename
+                print(f"✅ SAVED: {file_path}")
+                print(f"📁 FOLDER: {os.listdir(app.config['UPLOAD_FOLDER'])}")
+            else:
+                print(f"❌ REJECTED: {file.filename}")
+        else:
+            print("❌ NO RECEIPT FIELD!")
+
+        # ✅ NOW CREATE new_tx with receipt
         new_tx = Transaction(
             from_currency=from_curr, to_currency=to_curr,
             from_amount=from_amt, to_amount=to_amt,
             exchange_rate=rate, notes=notes,
-            is_fintrac=is_fintrac,  # ✅ USE CHECKBOX!
-            client_id=session['selected_client_id'],
-            status=request.form.get('status', 'closed'),  # ← DEFAULT CLOSED!
+            is_fintrac=is_fintrac,
+            status=status,
+            receipt_filename=receipt_filename,  # ← NOW SAFE!
+            client_id=session['selected_client_id']
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -595,6 +629,17 @@ def reports():
                            month_total=month_total,
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee)
+
+
+
+@app.route('/download_receipt/<int:tx_id>')
+def download_receipt(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    if not tx.receipt_filename:
+        flash('❌ No receipt found!')
+        return redirect(url_for('transactions'))
+    return send_from_directory(app.config['UPLOAD_FOLDER'], tx.receipt_filename)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
