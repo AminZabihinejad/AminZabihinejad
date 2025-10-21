@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import requests
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -76,6 +76,22 @@ FLAT_FEE_CAD = 5.0
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def generate_transaction_id(transaction_date):
+    """Generate a transaction ID in the format YYYYMMDDNNN."""
+    date_str = transaction_date.strftime('%Y%m%d')  # e.g., '20251020'
+    # Count transactions for the same date
+    start_of_day = datetime.strptime(date_str, '%Y%m%d')
+    end_of_day = start_of_day + timedelta(days=1)
+    tx_count = Transaction.query.filter(
+        Transaction.date >= start_of_day,
+        Transaction.date < end_of_day
+    ).count()
+    # Increment count for the new transaction
+    seq_number = tx_count + 1
+    # Format as three-digit string (e.g., '001')
+    seq_str = f'{seq_number:03d}'
+    return f'{date_str}{seq_str}'
 
 @app.route('/set_fees', methods=['POST'])
 def set_fees():
@@ -198,14 +214,18 @@ def index():
         else:
             print("❌ NO RECEIPT FIELD!")
 
-        # ✅ NOW CREATE new_tx with receipt
+        # ✅ Generate transaction ID
+        tx_id = generate_transaction_id(datetime.utcnow())
+
+        # ✅ NOW CREATE new_tx with receipt and custom ID
         new_tx = Transaction(
+            id=tx_id,  # ← Assign generated ID
             from_currency=from_curr, to_currency=to_curr,
             from_amount=from_amt, to_amount=to_amt,
             exchange_rate=rate, notes=notes,
             is_fintrac=is_fintrac,
             status=status,
-            receipt_filename=receipt_filename,  # ← NOW SAFE!
+            receipt_filename=receipt_filename,
             client_id=session['selected_client_id']
         )
         db.session.add(new_tx)
@@ -326,7 +346,7 @@ def edit_client(client_id):
     return render_template('edit_client.html', client=client)
 
 
-@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
+@app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
 def edit_transaction(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     if request.method == 'POST':
@@ -395,7 +415,7 @@ def transactions():
                            current_fee=current_fee, current_flat_fee=current_flat_fee,
                            filtered_transactions=len(all_tx))
 
-@app.route('/update_status/<int:tx_id>', methods=['POST'])
+@app.route('/update_status/<tx_id>', methods=['POST'])
 def update_status(tx_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -432,7 +452,7 @@ def charts():
     return render_template('charts.html', chart_data=json.dumps(chart_data))
 
 
-@app.route('/delete/<int:tx_id>')
+@app.route('/delete/<tx_id>')
 def delete_transaction(tx_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -566,7 +586,11 @@ def deposit():
         amount = float(request.form['amount'])
         notes = request.form.get('notes', f'Deposit {amount} {currency}')
 
+        # ✅ Generate transaction ID
+        tx_id = generate_transaction_id(datetime.utcnow())
+
         new_tx = Transaction(
+            id=tx_id,  # ← Assign generated ID
             from_currency=currency, to_currency=currency,
             from_amount=0, to_amount=amount,
             exchange_rate=1.0, notes=notes,
@@ -632,7 +656,7 @@ def reports():
 
 
 
-@app.route('/download_receipt/<int:tx_id>')
+@app.route('/download_receipt/<tx_id>')
 def download_receipt(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     if not tx.receipt_filename:
