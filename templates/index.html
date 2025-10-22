@@ -1,4 +1,43 @@
-{% extends "base.html" %}
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends "base.html" %}
 {% block title %}Piggy Bank - Overview{% endblock %}
 {% block content %}
 {% with messages = get_flashed_messages() %}
@@ -26,9 +65,21 @@
 
 <!-- 🔍 CLIENT FILTER -->
 <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin:20px 0;">
+    <style>
+        .led-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+    </style>
     {% if client %}
         <strong>👥 Customer:</strong>
         <span style="color:green;">
+            <span class="led-indicator" style="background-color: {{ led_color }};" title="Business Relation: ${{ '%.2f'|format(total_volume_usd) }} over past 6 months"></span>
             <strong>{{ client.first_name }} {{ client.last_name }}</strong><br>
             <small>{{ client.phone }} | {{ client.apartment|default('') }} {{ client.civic_number }} {{ client.street }}<br>
             {{ client.city }}, {{ client.province }} {{ client.postal_code }}</small>
@@ -97,19 +148,19 @@
 <h2>💸 Add Transaction</h2>
 <form method="POST" enctype="multipart/form-data">
     <div style="background:#f0f8ff; padding:15px; border-radius:8px; margin-bottom:15px;">
-        <label><input type="radio" name="mode" value="client_fixed" checked> 💰 Client Fixed Amount</label>
-        <label style="margin-left:20px;"><input type="radio" name="mode" value="bank_fixed"> 🏦 Bank Fixed Amount</label>
+        <label><input type="radio" name="mode" value="client_fixed" checked onchange="updateLabels()"> 💰 Client Fixed Amount</label>
+        <label style="margin-left:20px;"><input type="radio" name="mode" value="bank_fixed" onchange="updateLabels()"> 🏦 Bank Fixed Amount</label>
     </div>
     
     <table style="width: 100%;">
-        <tr><td><strong>{{ "From" if request.form.get('mode') != 'bank_fixed' else "To" }}:</strong></td>
+        <tr><td><strong id="fixed_currency_label">Client needs:</strong></td>
             <td><select name="fixed_currency" required>
                 <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
                 <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
                 <option value="CAD">🇨🇦 CAD</option>
             </select></td></tr>
-        <tr><td><strong>Fixed Amount:</strong></td><td><input type="number" name="fixed_amount" step="0.01" placeholder="100" required></td></tr>
-        <tr><td><strong>{{ "To" if request.form.get('mode') != 'bank_fixed' else "From" }}:</strong></td>
+        <tr><td><strong id="fixed_amount_label">Client needs Amount:</strong></td><td><input type="number" name="fixed_amount" step="0.01" placeholder="100" required></td></tr>
+        <tr><td><strong id="other_currency_label">Client pays:</strong></td>
             <td><select name="other_currency" required>
                 <option value="USD">💵 USD</option><option value="EUR">💶 EUR</option>
                 <option value="GBP">💷 GBP</option><option value="IRR">🇮🇷 IRR</option>
@@ -145,6 +196,23 @@
 <script>
 let currentFee = {{ current_fee }};
 let currentFlatFee = {{ current_flat_fee }};
+
+function updateLabels() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const fixedCurrencyLabel = document.getElementById('fixed_currency_label');
+    const fixedAmountLabel = document.getElementById('fixed_amount_label');
+    const otherCurrencyLabel = document.getElementById('other_currency_label');
+    
+    if (mode === 'client_fixed') {
+        fixedCurrencyLabel.textContent = 'Client needs:';
+        fixedAmountLabel.textContent = 'Client needs Amount:';
+        otherCurrencyLabel.textContent = 'Client pays:';
+    } else if (mode === 'bank_fixed') {
+        fixedCurrencyLabel.textContent = 'Bank pays:';
+        fixedAmountLabel.textContent = 'Bank pays Amount:';
+        otherCurrencyLabel.textContent = 'Client pays:';
+    }
+}
 
 function getLiveRateWithFee() {
     let fromCurr = document.querySelector('select[name="fixed_currency"]').value;
