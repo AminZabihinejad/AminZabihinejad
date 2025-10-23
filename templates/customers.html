@@ -3,19 +3,27 @@
 {% block content %}
 <h2>👥 Customer Management</h2>
 
-<!-- 🔍 SEARCH BAR WITH RISK FILTER + ADD BUTTON -->
+<!-- 🔍 SEARCH BAR WITH RISK + STATUS FILTER + ADD BUTTON -->
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-        <form method="GET" style="display: inline; flex: 1; min-width: 400px;">
+        <form method="GET" style="display: inline; flex: 1; min-width: 600px;">
             <input type="text" name="search" placeholder="🔍 Search Name/Email/Phone..."  
                    value="{{ request.args.get('search', '') }}" style="width:300px; padding:8px; margin-right:10px;">
-            Risk: <select name="risk_level" style="margin:0 10px; padding:5px;">
+            
+            Risk: <select name="risk_level" style="margin:0 10px; padding:5px; width:120px;">
                 <option value="">All Risks</option>
                 <option value="low risk" {{ 'selected' if request.args.get('risk_level') == 'low risk' }}>🟢 Low</option>
                 <option value="medium risk" {{ 'selected' if request.args.get('risk_level') == 'medium risk' }}>🟡 Med</option>
                 <option value="high risk" {{ 'selected' if request.args.get('risk_level') == 'high risk' }}>🟠 High</option>
                 <option value="on hold" {{ 'selected' if request.args.get('risk_level') == 'on hold' }}>🔴 Hold</option>
             </select>
+            
+            Status: <select name="tx_status" style="margin:0 10px; padding:5px; width:140px;">
+                <option value="">All Status</option>
+                <option value="pending" {{ 'selected' if request.args.get('tx_status') == 'pending' }}>⏳ Pending</option>
+                <option value="closed" {{ 'selected' if request.args.get('tx_status') == 'closed' }}>✅ Closed</option>
+            </select>
+            
             <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none; border-radius:4px;">
             <a href="{{ url_for('customers') }}" style="margin-left:10px; color:#3498db;">[Clear]</a>
         </form>
@@ -51,11 +59,12 @@
         <th style="padding:10px;">City</th>
         <th style="padding:10px;">ID Card</th>
         <th style="padding:10px;">Risk</th>
-        <th style="padding:10px; width:120px;">Notes</th>
-        <th style="padding:10px;">Volume (USD)</th>
+        <th style="padding:10px; width:100px;">Notes</th>
+        <th style="padding:10px;">Volume</th>
         <th style="padding:10px;">Tx</th>
         <th style="padding:10px;">Pending</th>
-        <th style="padding:10px;">Action</th>
+        <th style="padding:10px;">Created</th>
+        <th style="padding:10px; width:160px;">Action</th>
     </tr>
     {% for data in clients_data %}
     <tr style="border-bottom:1px solid #eee; {% if data.client.risk_level == 'high risk' or data.client.risk_level == 'on hold' %}background:#fff5f5;{% endif %}">
@@ -66,7 +75,6 @@
         <td style="padding:8px;">{{ data.client.phone[:12] }}...</td>
         <td style="padding:8px;">{{ data.client.city or '—' }}</td>
         <td style="padding:8px; font-size:11px;">
-            <!-- ✅ FIXED: Show NEW 3-ID system -->
             {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
                 {% if data.client.id1_number %}
                     <strong>{{ data.client.id1_number[:4] }}...{{ data.client.id1_number[-4:] }}</strong>
@@ -92,17 +100,16 @@
         </td>
         <td style="padding:8px;">
             {% if data.client.notes %}
-                <div style="height:30px; overflow-y:auto; border:1px solid #ddd; padding:3px; background:#f9f9f9; font-size:10px; border-radius:3px;">
-                    {{ data.client.notes[:100] }}{% if data.client.notes|length > 100 %}...{% endif %}
+                <div style="height:25px; overflow-y:auto; border:1px solid #ddd; padding:2px; background:#f9f9f9; font-size:9px; border-radius:3px;">
+                    {{ data.client.notes[:60] }}{% if data.client.notes|length > 60 %}...{% endif %}
                 </div>
             {% else %}
-                <span style="color:#999; font-style:italic;">— No notes —</span>
+                <span style="color:#999; font-style:italic;">—</span>
             {% endif %}
         </td>
-        <td style="padding:8px; font-weight:bold;">${{ "%.2f"|format(data.total_volume_usd) }}</td>
+        <td style="padding:8px; font-weight:bold; font-size:11px;">${{ "%.1f"|format(data.total_volume_usd) }}</td>
         <td style="padding:8px;">{{ data.transactions_list|length }}</td>
         <td style="padding:8px; text-align:center;">
-            <!-- ✅ FIXED: No .all() needed - data.transactions_list is already a list -->
             {% set pending_tx = data.transactions_list|selectattr('status', 'equalto', 'pending')|list %}
             {% if pending_tx|length > 0 %}
                 <span style="color:red; font-weight:bold;">🚨 {{ pending_tx|length }}</span>
@@ -110,16 +117,21 @@
                 <span style="color:green;">✅ 0</span>
             {% endif %}
         </td>
+        <td style="padding:8px; font-size:11px; text-align:center; color:#666;">
+            {{ data.client.created_at.strftime('%m/%d/%y') }}
+        </td>
         <td style="padding:8px;">
-            <a href="{{ url_for('select_customer', client_id=data.client.id) }}" 
-               style="background:#3498db; color:white; padding:6px 10px; text-decoration:none; border-radius:4px; font-size:11px;">SELECT</a>
-            <a href="{{ url_for('edit_client', client_id=data.client.id) }}" 
-               style="background:#f39c12; color:white; padding:6px 10px; text-decoration:none; border-radius:4px; font-size:11px; margin-left:5px;">✏️ EDIT</a>
+            <div style="display: flex; gap: 4px; justify-content: center;">
+                <a href="{{ url_for('select_customer', client_id=data.client.id) }}" 
+                   style="background:#3498db; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">SELECT</a>
+                <a href="{{ url_for('edit_client', client_id=data.client.id) }}" 
+                   style="background:#f39c12; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">✏️ EDIT</a>
+            </div>
         </td>
     </tr>
     {% else %}
     <tr>
-        <td colspan="13" style="padding:40px; text-align:center; color:#999; font-size:16px;">
+        <td colspan="14" style="padding:40px; text-align:center; color:#999; font-size:16px;">
             <div style="font-size:48px; margin-bottom:15px;">👥</div>
             No customers found
         </td>

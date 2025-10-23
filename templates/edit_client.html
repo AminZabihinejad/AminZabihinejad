@@ -3,6 +3,15 @@
 {% block content %}
 <h2>{% if client %}✏️ Edit Client: {{ client.first_name }} {{ client.last_name }}{% else %}👥 Add New Client{% endif %}</h2>
 
+<!-- ✅ CREATED DATE - NON-EDITABLE (ONLY FOR EXISTING CLIENTS) -->
+{% if client %}
+<div style="background:#d4edda; padding:15px; border-radius:8px; margin-bottom:20px; border-left:5px solid #28a745;">
+    <h4>📅 Registration Date</h4>
+    <p><strong>Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+    <small style="color:#666;">This date cannot be changed</small>
+</div>
+{% endif %}
+
 <!-- ✅ FORM STARTS HERE -->
 <form method="POST" id="clientForm">
 
@@ -179,6 +188,9 @@
         {% else %}<span style="color:red; font-weight:bold;">🔴 ON HOLD</span>{% endif %}
     </p>
     <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
+    
+    <!-- ✅ CREATED DATE IN SUMMARY -->
+    <p><strong>📅 Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
     
     <!-- ✅ FIXED: NO .all() - client.transactions is already a list -->
     {% set transactions_list = client.transactions %}
