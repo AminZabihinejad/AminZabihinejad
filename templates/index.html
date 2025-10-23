@@ -127,7 +127,7 @@
                     <td style="padding: 6px 4px; font-family: monospace; font-size: 11px;">{{ tx.id }}</td>
                     <td style="padding: 6px 4px; font-size: 11px;">{{ tx.client.first_name }} {{ tx.client.last_name }}</td>
                     <td style="padding: 6px 4px; text-align: center; font-weight: bold; font-size: 12px;">${{ "%.2f"|format(tx.to_amount if tx.to_currency == 'USD' else tx.from_amount) }}</td>
-                    <td style="padding: 6px 4px; text-align: center; font-weight: exact bold; font-size: 12px;">{{ other_currency }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}</td>
+                    <td style="padding: 6px 4px; text-align: center; font-weight: bold; font-size: 12px;">{{ other_currency }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}</td>
                     <td style="padding: 6px 4px; text-align: center;">
                         <span style="color: #f44336; font-weight: bold; font-size: 12px;">🔴 OPEN</span>
                     </td>
@@ -278,9 +278,21 @@ function updateLabels() {
 }
 
 function getLiveRateWithFee() {
-    const fromCurr = document.querySelector('select[name="fixed_currency"]').value;
-    const toCurr = document.querySelector('select[name="other_currency"]').value;
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const fixedCurr = document.querySelector('select[name="fixed_currency"]').value;
+    const otherCurr = document.querySelector('select[name="other_currency"]').value;
     
+    let fromCurr, toCurr;
+    if (mode === 'client_fixed') {
+        fromCurr = fixedCurr;
+        toCurr = otherCurr;
+    } else {
+        // ✅ INVERSE for bank_fixed: Wants fixed → Pays other
+        fromCurr = otherCurr;
+        toCurr = fixedCurr;
+    }
+    
+    // ✅ ALWAYS FETCH THE CORRECT COMPUTATION RATE
     fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
         .then(response => response.text())
         .then(rate => {
@@ -313,7 +325,7 @@ function updateRatePreview() {
                 previewText = `You receive: ${netAmount.toFixed(2)} ${otherCurrency}`;
             }
         } else {
-            // bank_fixed
+            // ✅ bank_fixed - INVERSE RATE LOGIC
             if (otherCurrency === 'CAD') {
                 // ✅ WANTS OTHER, PAYS CAD: Add CAD fee
                 const exchangeNeeded = fixedAmount / rate;
@@ -328,7 +340,9 @@ function updateRatePreview() {
             }
         }
         
-        document.getElementById('rate_preview').innerHTML = `📊 Rate: 1 ${fixedCurrency} = ${rate.toFixed(6)} ${otherCurrency}`;
+        // ✅ ALWAYS SHOW USD → CAD RATE ON SCREEN (FIXED!)
+        document.getElementById('rate_preview').innerHTML = 
+            `📊 Rate: 1 USD = ${rate.toFixed(6)} CAD`;
         document.getElementById('preview').innerHTML = previewText;
         document.getElementById('preview').style.color = '#1976d2';
     } else {

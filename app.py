@@ -263,12 +263,12 @@ def index():
 
             if from_currency == 'CAD':
                 # ✅ CLIENT PAYS CAD: Add CAD fee to payment amount
-                exchange_needed = fixed_amount / exchange_rate
-                from_amount = exchange_needed + FLAT_FEE_CAD
+                exchange_needed = (fixed_amount + FLAT_FEE_CAD)  * exchange_rate
+                from_amount = exchange_needed
             else:
                 # ✅ CLIENT PAYS NON-CAD: Add equivalent CAD fee
-                exchange_needed = fixed_amount / exchange_rate
-                cad_fee_equiv = FLAT_FEE_CAD / exchange_rate  # Convert CAD fee to from_currency
+                exchange_needed = fixed_amount * exchange_rate
+                cad_fee_equiv = FLAT_FEE_CAD# / exchange_rate  # Convert CAD fee to from_currency
                 from_amount = exchange_needed + cad_fee_equiv
 
         new_tx = Transaction(
