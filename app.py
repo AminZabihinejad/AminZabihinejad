@@ -7,6 +7,7 @@ import json
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
+import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'piggybank2025'
@@ -14,10 +15,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-UPLOAD_FOLDER = 'Uploads'
+UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -25,6 +27,7 @@ class User(db.Model):
     password = db.Column(db.String(100), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -45,6 +48,7 @@ class Client(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     transactions = db.relationship('Transaction', backref='client', lazy='dynamic')
 
+
 class Transaction(db.Model):
     id = db.Column(db.String(11), primary_key=True)
     date = db.Column(db.DateTime, default=datetime.utcnow)
@@ -59,6 +63,7 @@ class Transaction(db.Model):
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
 
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(username='admin').first():
@@ -66,12 +71,14 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
 
-# Global fees
-FEE_PERCENTAGE = 0.02
+# ✅ GLOBAL FEES - 0% PERCENTAGE, $5 FLAT FEE
+FEE_PERCENTAGE = 0.0
 FLAT_FEE_CAD = 5.0
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 def interpolate_color(volume):
     min_volume = 3000
@@ -86,9 +93,11 @@ def interpolate_color(volume):
     blue = 0
     return f"#{red:02X}{green:02X}{blue:02X}"
 
+
 def convert_to_usd(amount, currency):
     rates = {'CAD': 0.72, 'EUR': 1.08, 'GBP': 1.30, 'IRR': 0.000024}
     return amount * rates.get(currency, 1.0)
+
 
 def calculate_clients_data():
     search = request.args.get('search', '')
@@ -110,10 +119,8 @@ def calculate_clients_data():
     clients_data = []
     for client in clients:
         if client is None:
-            print(f"DEBUG: Skipping None client in calculate_clients_data")
             continue
         try:
-            # ✅ CONVERT QUERY TO LIST
             transactions_list = client.transactions.all()
             total_volume_usd = 0
             for tx in transactions_list:
@@ -129,13 +136,12 @@ def calculate_clients_data():
                 'client': client,
                 'total_volume_usd': round(total_volume_usd, 2),
                 'led_color': led_color,
-                'transactions_list': transactions_list  # ✅ PASS LIST TO TEMPLATE
+                'transactions_list': transactions_list
             })
-            print(f"DEBUG: Client {client.email}, Volume: {total_volume_usd}, Color: {led_color}, Tx: {len(transactions_list)}")
-        except AttributeError as e:
-            print(f"DEBUG: Error processing client {client.id if client else 'None'}: {str(e)}")
+        except AttributeError:
             continue
     return clients_data
+
 
 def generate_transaction_id(transaction_date):
     date_str = transaction_date.strftime('%Y%m%d')
@@ -148,6 +154,7 @@ def generate_transaction_id(transaction_date):
     seq_number = tx_count + 1
     seq_str = f'{seq_number:03d}'
     return f'{date_str}{seq_str}'
+
 
 @app.route('/set_fees', methods=['POST'])
 def set_fees():
@@ -173,12 +180,12 @@ def get_balances():
 
     balances = {}
     for tx in transactions:
-        # ✅ FIXED: Proper deposit vs exchange logic
-        if tx.from_amount == 0:  # Pure deposit (from_amount=0)
+        if tx.from_amount == 0:  # DEPOSIT
             balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
-        else:  # Exchange (both from_amount > 0 and to_amount > 0)
-            balances[tx.from_currency] = balances.get(tx.from_currency, 0) - tx.from_amount
-            balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
+        else:  # EXCHANGE: Exchange RECEIVES from_amount, PAYS to_amount
+            balances[tx.from_currency] = balances.get(tx.from_currency, 0) + tx.from_amount  # Receive from client
+            balances[tx.to_currency] = balances.get(tx.to_currency, 0) - tx.to_amount  # Pay to client
+
     return {k: round(v, 2) for k, v in balances.items()}
 
 
@@ -196,6 +203,7 @@ def login():
         flash('Invalid credentials!')
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -205,7 +213,6 @@ def logout():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if 'user_id' not in session:
-        flash('🔒 Please log in first!')
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -228,17 +235,30 @@ def index():
 
         tx_id = generate_transaction_id(datetime.utcnow())
 
-        # ✅ FIXED: Proper exchange calculation
-        if mode == 'client_fixed':  # Client pays fixed amount
+        # ✅ PERFECT FEE LOGIC: client_fixed deducts fee first, bank_fixed adds fee
+        if mode == 'client_fixed':  # Client sells fixed_amount of fixed_currency
             from_currency = fixed_currency
             to_currency = other_currency
-            from_amount = fixed_amount
-            to_amount = fixed_amount * exchange_rate  # CAD → USD
-        else:  # Client receives fixed amount
+
+            # ✅ Deduct flat fee FIRST from client's payment
+            remaining_after_fee = fixed_amount - FLAT_FEE_CAD
+            if remaining_after_fee <= 0:
+                flash(f'❌ Amount too small! Need > ${FLAT_FEE_CAD} {fixed_currency}')
+                return redirect(url_for('index'))
+
+            from_amount = fixed_amount  # Client pays full amount
+            to_amount = remaining_after_fee * exchange_rate  # Exchange remaining
+
+        else:  # bank_fixed: Client wants fixed_amount of other_currency
             from_currency = other_currency
             to_currency = fixed_currency
+
+            # ✅ Client receives exact fixed_amount
             to_amount = fixed_amount
-            from_amount = fixed_amount / exchange_rate  # USD → CAD
+
+            # ✅ Calculate exchange needed + add flat fee to client payment
+            exchange_needed = fixed_amount / exchange_rate
+            from_amount = exchange_needed + FLAT_FEE_CAD
 
         new_tx = Transaction(
             id=tx_id,
@@ -247,17 +267,18 @@ def index():
             from_amount=from_amount,
             to_amount=to_amount,
             exchange_rate=exchange_rate,
-            notes=notes,
+            notes=f"{notes} (Fee: ${FLAT_FEE_CAD})",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status
         )
         db.session.add(new_tx)
         db.session.commit()
-        flash(f'✅ {from_amount:.2f} {from_currency} → {to_amount:.2f} {to_currency} ({tx_id})')
+
+        flash(f'✅ {from_amount:.2f} {from_currency} → {to_amount:.2f} {to_currency} (Fee: ${FLAT_FEE_CAD})')
         return redirect(url_for('index'))
 
-    # GET: Render dashboard (unchanged)
+    # GET: Render dashboard
     client = None
     total_volume_usd = 0
     led_color = '#00FF00'
@@ -265,8 +286,7 @@ def index():
         client = Client.query.get(session['selected_client_id'])
         if client:
             six_months_ago = datetime.utcnow() - timedelta(days=180)
-            total_volume_usd = 0
-            transactions_list = client.transactions.all()  # ✅ Fix for dynamic
+            transactions_list = client.transactions.all()
             for tx in transactions_list:
                 if tx.date >= six_months_ago:
                     if tx.from_currency == 'USD':
@@ -278,8 +298,7 @@ def index():
             led_color = interpolate_color(total_volume_usd)
             total_volume_usd = round(total_volume_usd, 2)
 
-    balances = get_balances()  # ✅ Use your fixed function
-
+    balances = get_balances()
     open_transactions = Transaction.query.filter_by(status='pending').all()
     other_currency = 'CAD'
     current_fee = round(FEE_PERCENTAGE * 100, 1)
@@ -294,6 +313,7 @@ def index():
                            current_flat_fee=current_flat_fee,
                            total_volume_usd=total_volume_usd,
                            led_color=led_color)
+
 
 @app.route('/profile')
 def profile():
@@ -310,6 +330,7 @@ def profile():
                            total_clients=total_clients,
                            current_fee=current_fee, current_flat_fee=current_flat_fee)
 
+
 @app.route('/customers', methods=['GET', 'POST'])
 def customers():
     if 'user_id' not in session:
@@ -317,72 +338,38 @@ def customers():
         return redirect(url_for('login'))
 
     if request.method == 'POST':
-        first_name = request.form['first_name']
-        last_name = request.form['last_name']
-        email = request.form['email']
-        phone = request.form['phone']
-        apartment = request.form.get('apartment', '')
-        civic_number = request.form['civic_number']
-        street = request.form['street']
-        city = request.form['city']
-        province = request.form['province']
-        postal_code = request.form['postal_code']
-        id_card_number = request.form.get('id_card_number', '')
-        id_expiry_date = request.form.get('id_expiry_date')
-        risk_level = request.form['risk_level']
-        notes = request.form.get('notes', '')
+        id_expiry_date = None
+        id_expiry_str = request.form.get('id_expiry_date')
+        if id_expiry_str:
+            id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
 
-        existing_client = Client.query.filter_by(email=email).first()
-        if existing_client:
-            flash('❌ Email already exists! Please use a different email.', 'error')
-            return render_template('customers.html',
-                                   clients_data=calculate_clients_data(),
-                                   request=request,
-                                   form_data=request.form,
-                                   now=datetime.utcnow().date())
+        new_client = Client(
+            first_name=request.form['first_name'],
+            last_name=request.form['last_name'],
+            email=request.form['email'],
+            phone=request.form['phone'],
+            apartment=request.form.get('apartment', ''),
+            civic_number=request.form['civic_number'],
+            street=request.form['street'],
+            city=request.form['city'],
+            province=request.form['province'],
+            postal_code=request.form['postal_code'],
+            id_card_number=request.form.get('id_card_number', ''),
+            id_expiry_date=id_expiry_date,
+            risk_level=request.form['risk_level'],
+            notes=request.form.get('notes', '')
+        )
+        db.session.add(new_client)
+        db.session.commit()
+        flash('✅ Customer added successfully!')
+        return redirect(url_for('customers'))
 
-        try:
-            # Parse id_expiry_date to date object if provided
-            parsed_expiry_date = None
-            if id_expiry_date:
-                parsed_expiry_date = datetime.strptime(id_expiry_date, '%Y-%m-%d').date()
-
-            new_client = Client(
-                first_name=first_name,
-                last_name=last_name,
-                email=email,
-                phone=phone,
-                apartment=apartment,
-                civic_number=civic_number,
-                street=street,
-                city=city,
-                province=province,
-                postal_code=postal_code,
-                id_card_number=id_card_number,
-                id_expiry_date=parsed_expiry_date,  # Use parsed date
-                risk_level=risk_level,
-                notes=notes,
-                created_at=datetime.utcnow()
-            )
-            db.session.add(new_client)
-            db.session.commit()
-            flash('✅ Customer added successfully!')
-            return redirect(url_for('customers'))
-        except IntegrityError:
-            db.session.rollback()
-            flash('❌ Email already exists! Please use a different email.', 'error')
-            return render_template('customers.html',
-                                   clients_data=calculate_clients_data(),
-                                   request=request,
-                                   form_data=request.form,
-                                   now=datetime.utcnow().date())
-
-    # GET: Display customers with BR indicator
     return render_template('customers.html',
                            clients_data=calculate_clients_data(),
                            request=request,
                            form_data={},
                            now=datetime.utcnow().date())
+
 
 @app.route('/select_customer/<int:client_id>')
 def select_customer(client_id):
@@ -410,14 +397,12 @@ def edit_client(client_id):
         client.postal_code = request.form['postal_code']
         client.id_card_number = request.form.get('id_card_number', '')
 
-        # ✅ FIXED DATE PARSING
         id_expiry_date_str = request.form.get('id_expiry_date', '').strip()
         if id_expiry_date_str:
             try:
                 client.id_expiry_date = datetime.strptime(id_expiry_date_str, '%Y-%m-%d').date()
             except ValueError:
                 client.id_expiry_date = None
-                flash('⚠️ Invalid expiry date format. Cleared.', 'warning')
         else:
             client.id_expiry_date = None
 
@@ -431,18 +416,8 @@ def edit_client(client_id):
         except IntegrityError:
             db.session.rollback()
             flash('❌ Email already exists! Please use a different email.', 'error')
-            # ✅ Form repopulation
-            form_data = request.form.copy()
-            return render_template('edit_client.html',
-                                   client=client,
-                                   form_data=form_data,
-                                   now=datetime.utcnow().date())  # ✅ ADD NOW
 
-    # ✅ GET: Render with now
-    return render_template('edit_client.html',
-                           client=client,
-                           now=datetime.utcnow().date())  # ✅ ADD NOW
-
+    return render_template('edit_client.html', client=client, now=datetime.utcnow().date())
 
 
 @app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
@@ -458,6 +433,7 @@ def edit_transaction(tx_id):
         flash(f'✅ Transaction #{tx.id} updated!')
         return redirect(url_for('transactions'))
     return render_template('edit_transaction.html', tx=tx)
+
 
 @app.route('/transactions')
 def transactions():
@@ -512,6 +488,7 @@ def transactions():
                            current_fee=current_fee, current_flat_fee=current_flat_fee,
                            filtered_transactions=len(all_tx))
 
+
 @app.route('/update_status/<tx_id>', methods=['POST'])
 def update_status(tx_id):
     if 'user_id' not in session:
@@ -521,6 +498,7 @@ def update_status(tx_id):
     db.session.commit()
     flash(f'✅ Transaction #{tx.id} status: {tx.status.upper()}')
     return redirect(url_for('transactions'))
+
 
 @app.route('/charts')
 def charts():
@@ -538,14 +516,15 @@ def charts():
         date_str = tx.date.strftime('%Y-%m-%d')
         if date_str not in daily_balances:
             daily_balances[date_str] = {'USD': 0, 'EUR': 0, 'GBP': 0, 'IRR': 0, 'CAD': 0}
-        daily_balances[date_str][tx.from_currency] -= tx.from_amount
-        daily_balances[date_str][tx.to_currency] += tx.to_amount
+        daily_balances[date_str][tx.from_currency] += tx.from_amount
+        daily_balances[date_str][tx.to_currency] -= tx.to_amount
 
     dates = sorted(daily_balances.keys())
     usd_data = [daily_balances[date].get('USD', 0) for date in dates]
     eur_data = [daily_balances[date].get('EUR', 0) for date in dates]
     chart_data = {'dates': dates, 'usd': usd_data, 'eur': eur_data}
     return render_template('charts.html', chart_data=json.dumps(chart_data))
+
 
 @app.route('/delete/<tx_id>')
 def delete_transaction(tx_id):
@@ -560,6 +539,7 @@ def delete_transaction(tx_id):
     flash('✅ Transaction deleted!')
     return redirect(url_for('transactions'))
 
+
 @app.route('/get_live_rate_with_fee/<from_curr>/<to_curr>')
 def get_live_rate_with_fee(from_curr, to_curr):
     try:
@@ -567,11 +547,10 @@ def get_live_rate_with_fee(from_curr, to_curr):
         response = requests.get(url)
         data = response.json()
         live_rate = data['rates'][to_curr]
-        fee_multiplier = 1 + FEE_PERCENTAGE
-        fee_rate = live_rate * fee_multiplier
-        return str(round(fee_rate, 10))
+        return str(round(live_rate, 10))  # No percentage fee multiplier
     except:
-        return str(round(0.85 * (1 + FEE_PERCENTAGE), 10))
+        return str(round(0.85, 10))
+
 
 @app.route('/get_rate/<from_curr>/<to_curr>')
 def get_live_rate(from_curr, to_curr):
@@ -583,6 +562,7 @@ def get_live_rate(from_curr, to_curr):
         return str(round(rate, 4))
     except:
         return "0.85"
+
 
 @app.route('/export')
 def export_csv():
@@ -631,7 +611,7 @@ def export_csv():
         all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
 
     filename = 'transactions'
-    if search_client: filename += f'_John{search_client[:10]}'
+    if search_client: filename += f'_{search_client[:10]}'
     if search_from: filename += f'_{search_from}'
     if search_date: filename += f'_{search_date}'
     filename += '.csv'
@@ -659,6 +639,7 @@ def export_csv():
         headers={'Content-Disposition': f'attachment;filename={filename}'}
     )
     return response
+
 
 @app.route('/deposit', methods=['GET', 'POST'])
 def deposit():
@@ -699,6 +680,7 @@ def deposit():
                            client=selected_client,
                            current_fee=current_fee, current_flat_fee=current_flat_fee)
 
+
 @app.route('/reports')
 def reports():
     if 'user_id' not in session:
@@ -735,6 +717,7 @@ def reports():
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee)
 
+
 @app.route('/download_receipt/<tx_id>')
 def download_receipt(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
@@ -742,6 +725,7 @@ def download_receipt(tx_id):
         flash('❌ No receipt found!')
         return redirect(url_for('transactions'))
     return send_from_directory(app.config['UPLOAD_FOLDER'], tx.receipt_filename)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
