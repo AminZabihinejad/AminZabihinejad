@@ -1,9 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from datetime import datetime, date, timedelta
 import requests
 import json
+import csv
+from io import StringIO
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
@@ -156,17 +159,6 @@ def generate_transaction_id(transaction_date):
     return f'{date_str}{seq_str}'
 
 
-@app.route('/set_fees', methods=['POST'])
-def set_fees():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return redirect(url_for('login'))
-    global FEE_PERCENTAGE, FLAT_FEE_CAD
-    FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-    FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
-    flash(f'✅ Fees: {FEE_PERCENTAGE * 100}% + ${FLAT_FEE_CAD} CAD!')
-    return redirect(url_for('transactions'))
-
-
 def get_balances():
     if 'user_id' not in session:
         return {}
@@ -183,8 +175,8 @@ def get_balances():
         if tx.from_amount == 0:  # DEPOSIT
             balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
         else:  # EXCHANGE: Exchange RECEIVES from_amount, PAYS to_amount
-            balances[tx.from_currency] = balances.get(tx.from_currency, 0) + tx.from_amount  # Receive from client
-            balances[tx.to_currency] = balances.get(tx.to_currency, 0) - tx.to_amount  # Pay to client
+            balances[tx.from_currency] = balances.get(tx.from_currency, 0) + tx.from_amount
+            balances[tx.to_currency] = balances.get(tx.to_currency, 0) - tx.to_amount
 
     return {k: round(v, 2) for k, v in balances.items()}
 
@@ -212,14 +204,23 @@ def logout():
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    global FEE_PERCENTAGE, FLAT_FEE_CAD
+
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    if request.method == 'POST':
-        if not session.get('selected_client_id'):
-            flash('👥 SELECT A CLIENT FIRST!')
-            return redirect(url_for('customers'))
+    # ✅ FEE UPDATE FROM DASHBOARD
+    if request.method == 'POST' and 'update_fees' in request.form:
+        FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
+        FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
+        flash(f'✅ Fees updated: {FEE_PERCENTAGE * 100}% + ${FLAT_FEE_CAD} CAD!')
+        return redirect(url_for('index'))
 
+    if request.method == 'POST' and not session.get('selected_client_id'):
+        flash('👥 SELECT A CLIENT FIRST!')
+        return redirect(url_for('customers'))
+
+    if request.method == 'POST':
         mode = request.form['mode']
         fixed_currency = request.form['fixed_currency']
         fixed_amount = float(request.form['fixed_amount'])
@@ -235,30 +236,40 @@ def index():
 
         tx_id = generate_transaction_id(datetime.utcnow())
 
-        # ✅ PERFECT FEE LOGIC: client_fixed deducts fee first, bank_fixed adds fee
-        if mode == 'client_fixed':  # Client sells fixed_amount of fixed_currency
+        if mode == 'client_fixed':
             from_currency = fixed_currency
             to_currency = other_currency
+            from_amount = fixed_amount
 
-            # ✅ Deduct flat fee FIRST from client's payment
-            remaining_after_fee = fixed_amount - FLAT_FEE_CAD
-            if remaining_after_fee <= 0:
-                flash(f'❌ Amount too small! Need > ${FLAT_FEE_CAD} {fixed_currency}')
-                return redirect(url_for('index'))
+            if from_currency == 'CAD':
+                # ✅ CLIENT PAYS CAD: Deduct CAD fee FIRST, then convert remaining
+                remaining_cad = fixed_amount - FLAT_FEE_CAD
+                if remaining_cad <= 0:
+                    flash(f'❌ Amount too small! Need > ${FLAT_FEE_CAD} CAD')
+                    return redirect(url_for('index'))
+                to_amount = remaining_cad * exchange_rate
+            else:
+                # ✅ CLIENT PAYS NON-CAD: Convert first, deduct CAD fee from result
+                gross_to_amount = fixed_amount * exchange_rate
+                to_amount = gross_to_amount - FLAT_FEE_CAD
+                if to_amount <= 0:
+                    flash(f'❌ Amount too small after fee! Need > ${FLAT_FEE_CAD} {to_currency}')
+                    return redirect(url_for('index'))
 
-            from_amount = fixed_amount  # Client pays full amount
-            to_amount = remaining_after_fee * exchange_rate  # Exchange remaining
-
-        else:  # bank_fixed: Client wants fixed_amount of other_currency
+        else:  # bank_fixed
             from_currency = other_currency
             to_currency = fixed_currency
-
-            # ✅ Client receives exact fixed_amount
             to_amount = fixed_amount
 
-            # ✅ Calculate exchange needed + add flat fee to client payment
-            exchange_needed = fixed_amount / exchange_rate
-            from_amount = exchange_needed + FLAT_FEE_CAD
+            if from_currency == 'CAD':
+                # ✅ CLIENT PAYS CAD: Add CAD fee to payment amount
+                exchange_needed = fixed_amount / exchange_rate
+                from_amount = exchange_needed + FLAT_FEE_CAD
+            else:
+                # ✅ CLIENT PAYS NON-CAD: Add equivalent CAD fee
+                exchange_needed = fixed_amount / exchange_rate
+                cad_fee_equiv = FLAT_FEE_CAD / exchange_rate  # Convert CAD fee to from_currency
+                from_amount = exchange_needed + cad_fee_equiv
 
         new_tx = Transaction(
             id=tx_id,
@@ -267,7 +278,7 @@ def index():
             from_amount=from_amount,
             to_amount=to_amount,
             exchange_rate=exchange_rate,
-            notes=f"{notes} (Fee: ${FLAT_FEE_CAD})",
+            notes=f"{notes} (Fee: ${FLAT_FEE_CAD} CAD)",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status
@@ -275,10 +286,10 @@ def index():
         db.session.add(new_tx)
         db.session.commit()
 
-        flash(f'✅ {from_amount:.2f} {from_currency} → {to_amount:.2f} {to_currency} (Fee: ${FLAT_FEE_CAD})')
+        flash(f'✅ {from_amount:.2f} {from_currency} → {to_amount:.2f} {to_currency} (Fee: ${FLAT_FEE_CAD} CAD)')
         return redirect(url_for('index'))
 
-    # GET: Render dashboard
+    # GET: Render dashboard (UNCHANGED)
     client = None
     total_volume_usd = 0
     led_color = '#00FF00'
@@ -312,7 +323,9 @@ def index():
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee,
                            total_volume_usd=total_volume_usd,
-                           led_color=led_color)
+                           led_color=led_color,
+                           fee_percentage=current_fee,
+                           flat_fee_cad=current_flat_fee)
 
 
 @app.route('/profile')
@@ -382,9 +395,17 @@ def select_customer(client_id):
 
 @app.route('/edit_client/<int:client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     client = Client.query.get_or_404(client_id)
 
     if request.method == 'POST':
+        id_expiry_date = None
+        id_expiry_str = request.form.get('id_expiry_date')
+        if id_expiry_str:
+            id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
+
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
         client.email = request.form['email']
@@ -396,28 +417,15 @@ def edit_client(client_id):
         client.province = request.form['province']
         client.postal_code = request.form['postal_code']
         client.id_card_number = request.form.get('id_card_number', '')
-
-        id_expiry_date_str = request.form.get('id_expiry_date', '').strip()
-        if id_expiry_date_str:
-            try:
-                client.id_expiry_date = datetime.strptime(id_expiry_date_str, '%Y-%m-%d').date()
-            except ValueError:
-                client.id_expiry_date = None
-        else:
-            client.id_expiry_date = None
-
+        client.id_expiry_date = id_expiry_date
         client.risk_level = request.form['risk_level']
         client.notes = request.form.get('notes', '')
 
-        try:
-            db.session.commit()
-            flash(f'✅ {client.first_name} {client.last_name} updated!')
-            return redirect(url_for('customers'))
-        except IntegrityError:
-            db.session.rollback()
-            flash('❌ Email already exists! Please use a different email.', 'error')
+        db.session.commit()
+        flash('✅ Client updated successfully!')
+        return redirect(url_for('index'))
 
-    return render_template('edit_client.html', client=client, now=datetime.utcnow().date())
+    return render_template('edit_client.html', client=client)
 
 
 @app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
@@ -547,7 +555,7 @@ def get_live_rate_with_fee(from_curr, to_curr):
         response = requests.get(url)
         data = response.json()
         live_rate = data['rates'][to_curr]
-        return str(round(live_rate, 10))  # No percentage fee multiplier
+        return str(round(live_rate, 10))
     except:
         return str(round(0.85, 10))
 
@@ -568,9 +576,6 @@ def get_live_rate(from_curr, to_curr):
 def export_csv():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-
-    import csv
-    from io import StringIO
 
     search_date = request.args.get('date', '')
     search_client = request.args.get('client_name', '')
@@ -672,7 +677,7 @@ def deposit():
         flash(f'✅ Deposited ${amount} {currency}!')
         return redirect(url_for('deposit'))
 
-    total_deposits = db.session.query(db.func.sum(Transaction.to_amount)).filter_by(
+    total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(
         client_id=session['selected_client_id']).scalar() or 0
 
     return render_template('deposit.html',
@@ -686,31 +691,47 @@ def reports():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-    query = Transaction.query.filter(Transaction.date >= thirty_days_ago).order_by(Transaction.date.desc())
-    if session.get('selected_client_id'):
-        query = query.filter_by(client_id=session.get('selected_client_id'))
-    transactions = query.all()
+    # Get closed transactions only
+    transactions = Transaction.query.filter_by(status='closed').all()
 
+    # ✅ Initialize all variables
     daily_profit = {}
+    week_total = 0
+    month_total = 0
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    # Calculate daily profits
     for tx in transactions:
         date_str = tx.date.strftime('%Y-%m-%d')
+        total_value = (tx.from_amount + tx.to_amount) / 2  # Average for volume
+        profit = abs(tx.to_amount - (tx.from_amount * tx.exchange_rate))  # Fee profit
+
         if date_str not in daily_profit:
             daily_profit[date_str] = {'count': 0, 'volume': 0, 'profit': 0}
+
         daily_profit[date_str]['count'] += 1
-        daily_profit[date_str]['volume'] += tx.from_amount
-        profit_per_tx = ((tx.from_amount * (FEE_PERCENTAGE * 100) / 100) + FLAT_FEE_CAD) if tx.from_amount > 0 else 0
-        daily_profit[date_str]['profit'] += round(profit_per_tx, 2)
+        daily_profit[date_str]['volume'] += total_value
+        daily_profit[date_str]['profit'] += profit
 
-    today = datetime.utcnow().strftime('%Y-%m-%d')
-    week_total = sum(daily['profit'] for daily in list(daily_profit.values())[:7])
-    month_total = sum(daily['profit'] for daily in daily_profit.values())
+        # Time-based totals
+        if tx.date >= week_ago:
+            week_total += profit
+        if tx.date >= month_ago:
+            month_total += profit
 
+    # Sort by date (newest first)
+    sorted_daily = dict(sorted(daily_profit.items(), key=lambda x: x[0], reverse=True))
+
+    # Current fees
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
 
     return render_template('reports.html',
-                           daily_profit=daily_profit,
+                           daily_profit=sorted_daily,
                            today=today,
                            week_total=week_total,
                            month_total=month_total,
@@ -725,6 +746,17 @@ def download_receipt(tx_id):
         flash('❌ No receipt found!')
         return redirect(url_for('transactions'))
     return send_from_directory(app.config['UPLOAD_FOLDER'], tx.receipt_filename)
+
+
+@app.route('/set_fees', methods=['POST'])
+def set_fees():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return redirect(url_for('login'))
+    global FEE_PERCENTAGE, FLAT_FEE_CAD
+    FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
+    FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
+    flash(f'✅ Fees: {FEE_PERCENTAGE * 100}% + ${FLAT_FEE_CAD} CAD!')
+    return redirect(url_for('transactions'))
 
 
 if __name__ == '__main__':

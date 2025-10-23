@@ -25,6 +25,29 @@
     {% endif %}
 </div>
 
+<!-- ✅ FEE SETTINGS - TOP PRIORITY -->
+<div style="background: #e8f7ff; padding: 12px; border-radius: 8px; margin: 0 0 12px 0; border-left: 4px solid #2196f3;">
+    <form method="POST">
+        <input type="hidden" name="update_fees" value="1">
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div>
+                <label style="font-weight: bold; color: #1976d2; font-size: 13px;">Fee %:</label>
+                <input type="number" name="fee_percentage" value="{{ fee_percentage }}" step="0.1" min="0" max="10" 
+                       style="width: 60px; padding: 4px; margin-left: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" 
+                       onchange="updateFeePreview()">
+            </div>
+            <div>
+                <label style="font-weight: bold; color: #1976d2; font-size: 13px;">Flat Fee CAD:</label>
+                <input type="number" name="flat_fee_cad" value="{{ flat_fee_cad }}" step="0.01" min="0" max="50" 
+                       style="width: 70px; padding: 4px; margin-left: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" 
+                       onchange="updateFeePreview()">
+            </div>
+            <button type="submit" style="padding: 6px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">💰 UPDATE FEES</button>
+            <div style="font-size: 12px; color: #666; font-weight: bold; min-width: 120px;">Current: {{ fee_percentage }}% + ${{ flat_fee_cad }} CAD</div>
+        </div>
+    </form>
+</div>
+
 <!-- 🔍 CLIENT SELECTION -->
 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 8px; margin: 0 0 12px 0; color: white;">
     {% if client %}
@@ -104,7 +127,7 @@
                     <td style="padding: 6px 4px; font-family: monospace; font-size: 11px;">{{ tx.id }}</td>
                     <td style="padding: 6px 4px; font-size: 11px;">{{ tx.client.first_name }} {{ tx.client.last_name }}</td>
                     <td style="padding: 6px 4px; text-align: center; font-weight: bold; font-size: 12px;">${{ "%.2f"|format(tx.to_amount if tx.to_currency == 'USD' else tx.from_amount) }}</td>
-                    <td style="padding: 6px 4px; text-align: center; font-weight: bold; font-size: 12px;">{{ other_currency }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}</td>
+                    <td style="padding: 6px 4px; text-align: center; font-weight: exact bold; font-size: 12px;">{{ other_currency }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}</td>
                     <td style="padding: 6px 4px; text-align: center;">
                         <span style="color: #f44336; font-weight: bold; font-size: 12px;">🔴 OPEN</span>
                     </td>
@@ -153,14 +176,14 @@
             <td style="padding: 4px 0;"><strong id="fixed_amount_label" style="color: black;">Amount:</strong></td>
             <td style="padding: 4px 0;">
                 <input type="number" name="fixed_amount" step="0.01" min="5.01" placeholder="100.00" required 
-                       style="padding: 6px 8px; font-size: 15px; border-radius: 4px; border: 1px solid #ddd; width: 150px; color: black;" 
+                       id="fixed_amount" style="padding: 6px 8px; font-size: 15px; border-radius: 4px; border: 1px solid #ddd; width: 150px; color: black;" 
                        oninput="updateRatePreview()">
             </td>
         </tr>
         <tr>
             <td style="padding: 4px 0;"><strong id="other_currency_label" style="color: black;">Gets:</strong></td>
             <td style="padding: 4px 0;">
-                <select name="other_currency" required onchange="updateRatePreview()" style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid #ddd; width: 100%; max-width: 150px; color: black;">
+                <select name="other_currency" id="other_currency" required onchange="updateRatePreview()" style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid #ddd; width: 100%; max-width: 150px; color: black;">
                     <option value="USD">💵 USD</option>
                     <option value="EUR">💶 EUR</option>
                     <option value="GBP">💷 GBP</option>
@@ -173,15 +196,16 @@
             <td style="padding: 4px 0;"><strong style="color: black;">Rate:</strong></td>
             <td style="padding: 4px 0;">
                 <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                    <input type="number" name="exchange_rate" step="0.0000000001" placeholder="0.71234567" id="rate_input" required 
+                    <input type="number" name="exchange_rate" step="0.0000000001" placeholder="0.71234567" id="exchange_rate" required 
                            style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid #ddd; width: 110px; color: black;" 
                            oninput="updateRatePreview()">
                     <button type="button" onclick="getLiveRateWithFee()" style="padding: 6px 12px; background: #2196f3; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">💰 LIVE RATE</button>
-                    <div style="background: #e3f2fd; padding: 5px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; color: black;">
+                    <div id="fee_display" style="background: #e3f2fd; padding: 5px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; color: black;">
                         Fee: {{ current_fee }}% + ${{ current_flat_fee }} CAD
                     </div>
                 </div>
                 <div id="rate_preview" style="margin-top: 4px; font-size: 13px; font-weight: bold; color: #2e7d32;"></div>
+                <div id="preview" style="margin-top: 4px; font-size: 16px; font-weight: bold; color: #1976d2; background: #e3f2fd; padding: 8px; border-radius: 4px;"></div>
             </td>
         </tr>
         <tr>
@@ -225,8 +249,15 @@
 </form>
 
 <script>
-let currentFee = {{ current_fee }};
-let currentFlatFee = {{ current_flat_fee }};
+let currentFlatFee = {{ current_flat_fee|tojson }};
+
+function updateFeePreview() {
+    const feePct = parseFloat(document.querySelector('input[name="fee_percentage"]').value) || 0;
+    const flatFee = parseFloat(document.querySelector('input[name="flat_fee_cad"]').value) || 0;
+    document.getElementById('fee_display').innerHTML = `Fee: ${feePct}% + $${flatFee.toFixed(2)} CAD`;
+    currentFlatFee = flatFee;
+    updateRatePreview();
+}
 
 function updateLabels() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
@@ -253,50 +284,68 @@ function getLiveRateWithFee() {
     fetch(`/get_live_rate_with_fee/${fromCurr}/${toCurr}`)
         .then(response => response.text())
         .then(rate => {
-            document.getElementById('rate_input').value = rate;
+            document.getElementById('exchange_rate').value = rate;
             updateRatePreview();
-            alert(`✅ LIVE RATE LOADED: 1 ${fromCurr} = ${parseFloat(rate).toFixed(8)} ${toCurr}`);
         })
         .catch(() => alert('❌ Rate fetch failed!'));
 }
 
 function updateRatePreview() {
-    const fixedAmt = parseFloat(document.querySelector('input[name="fixed_amount"]').value) || 0;
-    const rate = parseFloat(document.getElementById('rate_input').value) || 0;
+    const fixedAmount = parseFloat(document.getElementById('fixed_amount').value) || 0;
+    const rate = parseFloat(document.getElementById('exchange_rate').value) || 0;
     const mode = document.querySelector('input[name="mode"]:checked').value;
+    const fixedCurrency = document.querySelector('select[name="fixed_currency"]').value;
+    const otherCurrency = document.getElementById('other_currency').value;
     
     let previewText = '';
-    if (fixedAmt > 0 && rate > 0) {
-        let clientPays, clientGets;
-        
+    
+    if (fixedAmount > 0 && rate > 0) {
         if (mode === 'client_fixed') {
-            const remaining = fixedAmt - currentFlatFee;
-            clientPays = fixedAmt;
-            clientGets = remaining * rate;
-            previewText = `Pays ${clientPays.toFixed(2)} → Gets ${clientGets.toFixed(2)}`;
+            if (fixedCurrency === 'CAD') {
+                // ✅ CAD → OTHER: Deduct CAD fee FIRST, then convert
+                const remainingCAD = fixedAmount - currentFlatFee;
+                const netAmount = remainingCAD * rate;
+                previewText = `You receive: ${netAmount.toFixed(2)} ${otherCurrency}`;
+            } else {
+                // ✅ OTHER → CAD: Convert first, deduct CAD fee
+                const grossAmount = fixedAmount * rate;
+                const netAmount = grossAmount - currentFlatFee;
+                previewText = `You receive: ${netAmount.toFixed(2)} ${otherCurrency}`;
+            }
         } else {
-            const exchangeNeeded = fixedAmt / rate;
-            clientPays = exchangeNeeded + currentFlatFee;
-            clientGets = fixedAmt;
-            previewText = `Pays ${clientPays.toFixed(2)} → Gets ${clientGets.toFixed(2)}`;
+            // bank_fixed
+            if (otherCurrency === 'CAD') {
+                // ✅ WANTS OTHER, PAYS CAD: Add CAD fee
+                const exchangeNeeded = fixedAmount / rate;
+                const totalPay = exchangeNeeded + currentFlatFee;
+                previewText = `You pay: ${totalPay.toFixed(2)} CAD`;
+            } else {
+                // ✅ WANTS CAD, PAYS OTHER: Add CAD fee equivalent
+                const exchangeNeeded = fixedAmount / rate;
+                const cadFeeEquiv = currentFlatFee / rate;
+                const totalPay = exchangeNeeded + cadFeeEquiv;
+                previewText = `You pay: ${totalPay.toFixed(2)} ${fixedCurrency}`;
+            }
         }
         
-        document.getElementById('rate_preview').innerHTML = `📊 ${previewText}`;
-        document.getElementById('rate_preview').style.color = '#2e7d32';
+        document.getElementById('rate_preview').innerHTML = `📊 Rate: 1 ${fixedCurrency} = ${rate.toFixed(6)} ${otherCurrency}`;
+        document.getElementById('preview').innerHTML = previewText;
+        document.getElementById('preview').style.color = '#1976d2';
     } else {
         document.getElementById('rate_preview').innerHTML = '';
+        document.getElementById('preview').innerHTML = '';
     }
 }
 
 function showPreview() {
-    const giveCurr = document.querySelector('select[name="fixed_currency"]').value;
-    const getCurr = document.querySelector('select[name="other_currency"]').value;
-    const giveAmt = parseFloat(document.querySelector('input[name="fixed_amount"]').value);
+    const fixedCurrency = document.querySelector('select[name="fixed_currency"]').value;
+    const otherCurrency = document.querySelector('select[name="other_currency"]').value;
+    const fixedAmount = parseFloat(document.querySelector('input[name="fixed_amount"]').value);
     const rate = parseFloat(document.querySelector('input[name="exchange_rate"]').value);
     const mode = document.querySelector('input[name="mode"]:checked').value;
     const clientName = "{{ client.first_name if client else 'Customer' }} {{ client.last_name if client else '' }}".trim();
     
-    if (!giveAmt || !rate) {
+    if (!fixedAmount || !rate) {
         alert('❌ Please enter amount and rate!');
         return;
     }
@@ -304,19 +353,38 @@ function showPreview() {
     let clientPays, clientGets, feeNote;
     
     if (mode === 'client_fixed') {
-        const remaining = giveAmt - currentFlatFee;
-        if (remaining <= 0) {
-            alert(`❌ Amount too small! Need > $${currentFlatFee}`);
-            return;
+        if (fixedCurrency === 'CAD') {
+            const remainingCAD = fixedAmount - currentFlatFee;
+            if (remainingCAD <= 0) {
+                alert(`❌ Amount too small! Need > $${currentFlatFee.toFixed(2)} CAD`);
+                return;
+            }
+            clientPays = fixedAmount;
+            clientGets = remainingCAD * rate;
+            feeNote = `$${currentFlatFee.toFixed(2)} CAD deducted from payment`;
+        } else {
+            const grossAmount = fixedAmount * rate;
+            clientPays = fixedAmount;
+            clientGets = grossAmount - currentFlatFee;
+            if (clientGets <= 0) {
+                alert(`❌ Amount too small after fee! Need > $${currentFlatFee.toFixed(2)} ${otherCurrency}`);
+                return;
+            }
+            feeNote = `$${currentFlatFee.toFixed(2)} CAD deducted from ${otherCurrency}`;
         }
-        clientPays = giveAmt;
-        clientGets = remaining * rate;
-        feeNote = `$${currentFlatFee} deducted from payment`;
     } else {
-        const exchangeNeeded = giveAmt / rate;
-        clientPays = exchangeNeeded + currentFlatFee;
-        clientGets = giveAmt;
-        feeNote = `$${currentFlatFee} added to payment`;
+        if (otherCurrency === 'CAD') {
+            const exchangeNeeded = fixedAmount / rate;
+            clientPays = exchangeNeeded + currentFlatFee;
+            clientGets = fixedAmount;
+            feeNote = `$${currentFlatFee.toFixed(2)} CAD added to payment`;
+        } else {
+            const exchangeNeeded = fixedAmount / rate;
+            const cadFeeEquiv = currentFlatFee / rate;
+            clientPays = exchangeNeeded + cadFeeEquiv;
+            clientGets = fixedAmount;
+            feeNote = `$${currentFlatFee.toFixed(2)} CAD fee equivalent added`;
+        }
     }
     
     const message = `
@@ -325,11 +393,11 @@ function showPreview() {
 👤 CLIENT: ${clientName}
 💰 MODE: ${mode === 'client_fixed' ? 'Client Sells Fixed' : 'Client Wants Fixed'}
 
-📤 CLIENT PAYS:  $${clientPays.toFixed(2)} ${giveCurr}
-📥 CLIENT GETS:  $${clientGets.toFixed(2)} ${getCurr}
+📤 CLIENT PAYS:  ${clientPays.toFixed(2)} ${fixedCurrency}
+📥 CLIENT GETS:  ${clientGets.toFixed(2)} ${otherCurrency}
 
-📊 RATE: 1 ${giveCurr} = ${rate.toFixed(8)} ${getCurr}
-💸 FEE: $${currentFlatFee} (${feeNote})
+📊 RATE: 1 ${fixedCurrency} = ${rate.toFixed(8)} ${otherCurrency}
+💸 FEE: $${currentFlatFee.toFixed(2)} CAD (${feeNote})
 ━━━━━━━━━━━━━━━━━━━━━━
 ✅ Click CONFIRM to proceed
     `;
@@ -341,6 +409,16 @@ function showPreview() {
 document.addEventListener('DOMContentLoaded', function() {
     updateLabels();
     updateRatePreview();
+    
+    // Add event listeners
+    document.getElementById('fixed_amount').addEventListener('input', updateRatePreview);
+    document.getElementById('exchange_rate').addEventListener('input', updateRatePreview);
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', updateRatePreview);
+    });
+    document.querySelectorAll('select[name="fixed_currency"], select[name="other_currency"]').forEach(select => {
+        select.addEventListener('change', updateRatePreview);
+    });
 });
 </script>
 {% endblock %}
