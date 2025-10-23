@@ -3,81 +3,173 @@
 {% block content %}
 <h2>{% if client %}✏️ Edit Client: {{ client.first_name }} {{ client.last_name }}{% else %}👥 Add New Client{% endif %}</h2>
 
+<!-- ✅ FORM STARTS HERE -->
+<form method="POST" id="clientForm">
+
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
-    <form method="POST">
+    <h3>👤 Basic Information</h3>
+    <table style="width:100%;">
+        <tr>
+            <td style="width:110px;">First Name <span style="color:red;">*</span>:</td>
+            <td><input name="first_name" value="{{ client.first_name if client else '' }}" required style="width:180px;"></td>
+            <td style="width:110px;">Last Name <span style="color:red;">*</span>:</td>
+            <td><input name="last_name" value="{{ client.last_name if client else '' }}" required style="width:180px;"></td>
+        </tr>
+        <tr>
+            <td>Email <span style="color:red;">*</span>:</td>
+            <td><input name="email" type="email" value="{{ client.email if client else '' }}" required style="width:180px;"></td>
+            <td>Phone <span style="color:red;">*</span>:</td>
+            <td><input name="phone" value="{{ client.phone if client else '' }}" required style="width:180px;"></td>
+        </tr>
+    </table>
+</div>
+
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>🏠 Address</h3>
+    <table style="width:100%;">
+        <tr>
+            <td style="width:110px;">Apt #:</td>
+            <td><input name="apartment" value="{{ client.apartment if client else '' }}" placeholder="101" style="width:100px;"></td>
+            <td style="width:110px;">Civic # <span style="color:red;">*</span>:</td>
+            <td><input name="civic_number" value="{{ client.civic_number if client else '' }}" required style="width:100px;"></td>
+        </tr>
+        <tr>
+            <td>Street <span style="color:red;">*</span>:</td>
+            <td colspan="3"><input name="street" value="{{ client.street if client else '' }}" required style="width:100%;"></td>
+        </tr>
+        <tr>
+            <td>City <span style="color:red;">*</span>:</td>
+            <td><input name="city" value="{{ client.city if client else '' }}" required style="width:150px;"></td>
+            <td>Province <span style="color:red;">*</span>:</td>
+            <td><input name="province" value="{{ client.province if client else '' }}" required style="width:60px;"></td>
+            <td>Postal <span style="color:red;">*</span>:</td>
+            <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" required placeholder="M5V 2T6" style="width:90px;"></td>
+        </tr>
+    </table>
+</div>
+
+<!-- ✅ 3 ID SECTIONS -->
+<div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>🆔 Identification Documents <small>(Optional - Add up to 3 IDs)</small></h3>
+    
+    <!-- ID 1 -->
+    <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:white;">
+        <h4>📄 ID #1</h4>
         <table style="width:100%;">
             <tr>
-                <td style="width:100px;">First Name <span style="color:red;">*</span>:</td>
-                <td><input name="first_name" value="{{ client.first_name if client else '' }}" required style="width:150px;"></td>
-                <td style="width:100px;">Last Name <span style="color:red;">*</span>:</td>
-                <td><input name="last_name" value="{{ client.last_name if client else '' }}" required style="width:150px;"></td>
-            </tr>
-            <tr>
-                <td>Email <span style="color:red;">*</span>:</td>
-                <td><input name="email" type="email" value="{{ client.email if client else '' }}" required style="width:150px;"></td>
-                <td>Phone <span style="color:red;">*</span>:</td>
-                <td><input name="phone" value="{{ client.phone if client else '' }}" required style="width:150px;"></td>
-            </tr>
-            <tr>
-                <td>Apt #:</td>
-                <td><input name="apartment" value="{{ client.apartment if client else '' }}" placeholder="101" style="width:150px;"></td>
-                <td>Civic # <span style="color:red;">*</span>:</td>
-                <td><input name="civic_number" value="{{ client.civic_number if client else '' }}" required style="width:150px;"></td>
-            </tr>
-            <tr>
-                <td>Street <span style="color:red;">*</span>:</td>
-                <td colspan="3"><input name="street" value="{{ client.street if client else '' }}" required style="width:100%;"></td>
-            </tr>
-            <tr>
-                <td>City <span style="color:red;">*</span>:</td>
-                <td><input name="city" value="{{ client.city if client else '' }}" required style="width:150px;"></td>
-                <td>Province <span style="color:red;">*</span>:</td>
-                <td><input name="province" value="{{ client.province if client else '' }}" required style="width:60px;"></td>
-                <td>Postal <span style="color:red;">*</span>:</td>
-                <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" required placeholder="M5V 2T6" style="width:80px;"></td>
-            </tr>
-            <tr>
-                <td>ID Card:</td>
-                <td><input type="text" name="id_card_number" value="{{ client.id_card_number if client else '' }}" placeholder="123456789" style="width:150px;"></td>
-                <td>Expiry:</td>
-                <td><input type="date" name="id_expiry_date" value="{{ client.id_expiry_date.strftime('%Y-%m-%d') if client and client.id_expiry_date else '' }}" style="width:150px;"></td>
-            </tr>
-            <tr style="background:#fff3cd;">
-                <td><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
+                <td style="width:130px;">Type:</td>
                 <td>
-                    <select name="risk_level" required style="width:150px;">
-                        <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>🟢 Low Risk</option>
-                        <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>🟡 Medium Risk</option>
-                        <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>🟠 High Risk</option>
-                        <option value="on hold" {{ 'selected' if client and client.risk_level == 'on hold' }}>🔴 On Hold</option>
+                    <select name="id1_type" style="width:160px;">
+                        <option value="">— Select Type —</option>
+                        <option value="passport" {{ 'selected' if client and client.id1_type == 'passport' }}>🛂 Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id1_type == 'driver_license' }}>🚗 Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id1_type == 'insurance_card' }}>🏥 Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id1_type == 'other' }}>📋 Other</option>
                     </select>
                 </td>
-                <td><strong>Notes:</strong></td>
-                <td colspan="3">
-                    <textarea name="notes" rows="3" placeholder="AML notes, behavior, alerts, large TX history..." 
-                              style="width:100%; min-height:90px; resize:vertical;">{{ client.notes if client else '' }}</textarea>
-                </td>
+                <td style="width:130px;">Issued By:</td>
+                <td><input name="id1_issued_by" value="{{ client.id1_issued_by if client else '' }}" placeholder="Canada, USA..." style="width:180px;"></td>
+            </tr>
+            <tr>
+                <td>ID Number:</td>
+                <td><input type="text" name="id1_number" value="{{ client.id1_number if client else '' }}" placeholder="123456789" style="width:180px;"></td>
+                <td>Expiry Date:</td>
+                <td><input type="date" name="id1_expiry_date" value="{{ client.id1_expiry_date.strftime('%Y-%m-%d') if client and client.id1_expiry_date else '' }}" style="width:180px;"></td>
             </tr>
         </table>
-        <input type="submit" value="{% if client %}💾 UPDATE CLIENT{% else %}👥 ADD NEW CLIENT{% endif %}" 
-               style="width:100%; padding:15px; background:#27ae60; color:white; border:none; margin-top:10px; font-size:16px;">
-    </form>
+    </div>
+
+    <!-- ID 2 -->
+    <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:white;">
+        <h4>📄 ID #2</h4>
+        <table style="width:100%;">
+            <tr>
+                <td style="width:130px;">Type:</td>
+                <td>
+                    <select name="id2_type" style="width:160px;">
+                        <option value="">— Select Type —</option>
+                        <option value="passport" {{ 'selected' if client and client.id2_type == 'passport' }}>🛂 Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id2_type == 'driver_license' }}>🚗 Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id2_type == 'insurance_card' }}>🏥 Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id2_type == 'other' }}>📋 Other</option>
+                    </select>
+                </td>
+                <td style="width:130px;">Issued By:</td>
+                <td><input name="id2_issued_by" value="{{ client.id2_issued_by if client else '' }}" placeholder="Canada, USA..." style="width:180px;"></td>
+            </tr>
+            <tr>
+                <td>ID Number:</td>
+                <td><input type="text" name="id2_number" value="{{ client.id2_number if client else '' }}" placeholder="123456789" style="width:180px;"></td>
+                <td>Expiry Date:</td>
+                <td><input type="date" name="id2_expiry_date" value="{{ client.id2_expiry_date.strftime('%Y-%m-%d') if client and client.id2_expiry_date else '' }}" style="width:180px;"></td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- ID 3 -->
+    <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:20px; background:white;">
+        <h4>📄 ID #3</h4>
+        <table style="width:100%;">
+            <tr>
+                <td style="width:130px;">Type:</td>
+                <td>
+                    <select name="id3_type" style="width:160px;">
+                        <option value="">— Select Type —</option>
+                        <option value="passport" {{ 'selected' if client and client.id3_type == 'passport' }}>🛂 Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id3_type == 'driver_license' }}>🚗 Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id3_type == 'insurance_card' }}>🏥 Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id3_type == 'other' }}>📋 Other</option>
+                    </select>
+                </td>
+                <td style="width:130px;">Issued By:</td>
+                <td><input name="id3_issued_by" value="{{ client.id3_issued_by if client else '' }}" placeholder="Canada, USA..." style="width:180px;"></td>
+            </tr>
+            <tr>
+                <td>ID Number:</td>
+                <td><input type="text" name="id3_number" value="{{ client.id3_number if client else '' }}" placeholder="123456789" style="width:180px;"></td>
+                <td>Expiry Date:</td>
+                <td><input type="date" name="id3_expiry_date" value="{{ client.id3_expiry_date.strftime('%Y-%m-%d') if client and client.id3_expiry_date else '' }}" style="width:180px;"></td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<!-- RISK & NOTES -->
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:30px;">
+    <h3>⚠️ Risk Assessment</h3>
+    <table style="width:100%;">
+        <tr style="background:#fff3cd;">
+            <td style="width:130px;"><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
+            <td>
+                <select name="risk_level" required style="width:200px;">
+                    <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>🟢 Low Risk</option>
+                    <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>🟡 Medium Risk</option>
+                    <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>🟠 High Risk</option>
+                    <option value="on hold" {{ 'selected' if client and client.risk_level == 'on hold' }}>🔴 On Hold</option>
+                </select>
+            </td>
+            <td style="width:130px;"><strong>Notes:</strong></td>
+            <td>
+                <textarea name="notes" rows="4" placeholder="AML notes, behavior, alerts, large TX history..." 
+                          style="width:100%; min-height:100px; resize:vertical;">{{ client.notes if client else '' }}</textarea>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<!-- ✅ FORM ENDS HERE -->
+</form>
+
+<!-- ✅ SUBMIT BUTTON -->
+<div style="text-align:center; margin-bottom:30px;">
+    <button type="submit" form="clientForm" 
+            style="width:100%; max-width:400px; padding:18px; background:#27ae60; color:white; border:none; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; box-shadow:0 4px 15px rgba(39,174,96,0.3);">
+        {% if client %}💾 UPDATE CLIENT{% else %}👥 ADD NEW CLIENT{% endif %}
+    </button>
 </div>
 
 {% if client %}
-<!-- ✅ SHOW SUMMARY & TRANSACTIONS ONLY FOR EXISTING CLIENTS -->
-<style>
-    .led-indicator {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
-        vertical-align: middle;
-        margin-right: 5px;
-    }
-</style>
-
+<!-- ✅ CLIENT SUMMARY -->
 <div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h4>📋 Client Summary</h4>
     <p><strong>Risk:</strong> 
@@ -88,7 +180,8 @@
     </p>
     <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
     
-    {% set transactions_list = client.transactions.all() %}
+    <!-- ✅ FIXED: NO .all() - client.transactions is already a list -->
+    {% set transactions_list = client.transactions %}
     <p><strong>Transactions:</strong> {{ transactions_list|length }} | 
        <strong>Pending:</strong> 
        {% set pending_tx = transactions_list|selectattr('status', 'equalto', 'pending')|list %}
@@ -99,18 +192,36 @@
        {% endif %}
     </p>
     
-    {% if client.id_card_number %}
-    <p><strong>ID:</strong> {{ client.id_card_number[:4] }}...{{ client.id_card_number[-4:] }}
-       {% if client.id_expiry_date %}
-           | <strong>Exp:</strong> 
-           <span style="{% if client.id_expiry_date < now %}color:red;{% else %}color:#666;{% endif %}">
-               {{ client.id_expiry_date.strftime('%m/%y') }}
-           </span>
-       {% endif %}
-    </p>
+    <!-- ✅ SHOW ALL 3 IDs -->
+    {% if client.id1_number or client.id2_number or client.id3_number %}
+    <div style="margin-top:15px;">
+        <strong>🆔 IDs:</strong><br>
+        {% if client.id1_number %}
+            <small>{{ client.id1_type or 'ID' }} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }} 
+            {% if client.id1_expiry_date %}
+                ({{ client.id1_issued_by or 'Unknown' }} - Exp: {{ client.id1_expiry_date.strftime('%m/%y') }})
+            {% endif %}
+            </small><br>
+        {% endif %}
+        {% if client.id2_number %}
+            <small>{{ client.id2_type or 'ID' }} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }} 
+            {% if client.id2_expiry_date %}
+                ({{ client.id2_issued_by or 'Unknown' }} - Exp: {{ client.id2_expiry_date.strftime('%m/%y') }})
+            {% endif %}
+            </small><br>
+        {% endif %}
+        {% if client.id3_number %}
+            <small>{{ client.id3_type or 'ID' }} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }} 
+            {% if client.id3_expiry_date %}
+                ({{ client.id3_issued_by or 'Unknown' }} - Exp: {{ client.id3_expiry_date.strftime('%m/%y') }})
+            {% endif %}
+            </small>
+        {% endif %}
+    </div>
     {% endif %}
 </div>
 
+<!-- ✅ RECENT TRANSACTIONS -->
 <h3>📊 Recent Transactions ({{ transactions_list|length }})</h3>
 <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">
     <tr style="background:#f2f2f2;">
@@ -137,7 +248,11 @@
 </table>
 {% endif %}
 
-<div style="margin-top:20px;">
-    <a href="{{ url_for('customers') }}" style="font-size:16px;">👥 Back to Customers</a>
+<!-- ✅ BACK BUTTON -->
+<div style="text-align:center; margin-top:30px;">
+    <a href="{{ url_for('customers') }}" 
+       style="font-size:16px; color:#3498db; font-weight:bold; text-decoration:none; padding:12px 24px; border:2px solid #3498db; border-radius:8px; display:inline-block;">
+       👥 Back to Customers
+    </a>
 </div>
 {% endblock %}

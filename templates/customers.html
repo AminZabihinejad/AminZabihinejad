@@ -66,12 +66,19 @@
         <td style="padding:8px;">{{ data.client.phone[:12] }}...</td>
         <td style="padding:8px;">{{ data.client.city or '—' }}</td>
         <td style="padding:8px; font-size:11px;">
-            {% if data.client.id_card_number %}
-                <strong>{{ data.client.id_card_number[:4] }}...{{ data.client.id_card_number[-4:] }}</strong>
-                {% if data.client.id_expiry_date %}
-                    <br><small style="{% if data.client.id_expiry_date and data.client.id_expiry_date < now %}color:red;{% else %}color:#666;{% endif %}">
-                        Exp: {{ data.client.id_expiry_date.strftime('%m/%y') }}
-                    </small>
+            <!-- ✅ FIXED: Show NEW 3-ID system -->
+            {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
+                {% if data.client.id1_number %}
+                    <strong>{{ data.client.id1_number[:4] }}...{{ data.client.id1_number[-4:] }}</strong>
+                    {% if data.client.id1_expiry_date %}
+                        <br><small style="{% if data.client.id1_expiry_date and data.client.id1_expiry_date < now %}color:red;{% else %}color:#666;{% endif %}">
+                            Exp: {{ data.client.id1_expiry_date.strftime('%m/%y') }}
+                        </small>
+                    {% endif %}
+                {% elif data.client.id2_number %}
+                    <strong>{{ data.client.id2_number[:4] }}...{{ data.client.id2_number[-4:] }}</strong>
+                {% elif data.client.id3_number %}
+                    <strong>{{ data.client.id3_number[:4] }}...{{ data.client.id3_number[-4:] }}</strong>
                 {% endif %}
             {% else %}
                 <span style="color:#999;">—</span>
@@ -95,6 +102,7 @@
         <td style="padding:8px; font-weight:bold;">${{ "%.2f"|format(data.total_volume_usd) }}</td>
         <td style="padding:8px;">{{ data.transactions_list|length }}</td>
         <td style="padding:8px; text-align:center;">
+            <!-- ✅ FIXED: No .all() needed - data.transactions_list is already a list -->
             {% set pending_tx = data.transactions_list|selectattr('status', 'equalto', 'pending')|list %}
             {% if pending_tx|length > 0 %}
                 <span style="color:red; font-weight:bold;">🚨 {{ pending_tx|length }}</span>

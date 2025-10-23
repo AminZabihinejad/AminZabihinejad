@@ -34,23 +34,41 @@ class User(db.Model):
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
-    apartment = db.Column(db.String(10))
-    civic_number = db.Column(db.String(10), nullable=False)
-    street = db.Column(db.String(100), nullable=False)
-    city = db.Column(db.String(50), nullable=False)
+    apartment = db.Column(db.String(20))
+    civic_number = db.Column(db.String(20), nullable=False)
+    street = db.Column(db.String(200), nullable=False)
+    city = db.Column(db.String(100), nullable=False)
     province = db.Column(db.String(10), nullable=False)
     postal_code = db.Column(db.String(10), nullable=False)
-    id_card_number = db.Column(db.String(20))
-    id_expiry_date = db.Column(db.Date)
     risk_level = db.Column(db.String(20), default='low risk')
-    notes = db.Column(db.Text, nullable=True)
+    notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    transactions = db.relationship('Transaction', backref='client', lazy='dynamic')
 
+    # ✅ NEW ID FIELDS (OPTIONAL)
+    id1_type = db.Column(db.String(50))
+    id1_issued_by = db.Column(db.String(100))
+    id1_number = db.Column(db.String(50))
+    id1_expiry_date = db.Column(db.Date)
+
+    id2_type = db.Column(db.String(50))
+    id2_issued_by = db.Column(db.String(100))
+    id2_number = db.Column(db.String(50))
+    id2_expiry_date = db.Column(db.Date)
+
+    id3_type = db.Column(db.String(50))
+    id3_issued_by = db.Column(db.String(100))
+    id3_number = db.Column(db.String(50))
+    id3_expiry_date = db.Column(db.Date)
+
+    # Legacy fields (keep for compatibility)
+    #id_card_number = db.Column(db.String(50))
+    #id_expiry_date = db.Column(db.Date)
+
+    transactions = db.relationship('Transaction', backref='client', lazy=True)
 
 class Transaction(db.Model):
     id = db.Column(db.String(11), primary_key=True)
@@ -105,7 +123,8 @@ def convert_to_usd(amount, currency):
 def calculate_clients_data():
     search = request.args.get('search', '')
     risk_level = request.args.get('risk_level', '')
-    query = Client.query
+    query = Client.query.order_by(Client.created_at.desc())
+
     if search:
         query = query.filter(
             db.or_(
@@ -117,14 +136,17 @@ def calculate_clients_data():
         )
     if risk_level:
         query = query.filter(Client.risk_level == risk_level)
+
     clients = query.all()
+    print(f"🔍 LOADED {len(clients)} clients from DB")
+
     six_months_ago = datetime.utcnow() - timedelta(days=180)
     clients_data = []
+
     for client in clients:
-        if client is None:
-            continue
         try:
-            transactions_list = client.transactions.all()
+            # ✅ FIX: client.transactions IS ALREADY A LIST - NO .all()!
+            transactions_list = client.transactions  # ← THIS IS THE FIX!
             total_volume_usd = 0
             for tx in transactions_list:
                 if tx.date >= six_months_ago:
@@ -141,8 +163,11 @@ def calculate_clients_data():
                 'led_color': led_color,
                 'transactions_list': transactions_list
             })
-        except AttributeError:
+        except Exception as e:
+            print(f"❌ Client {client.id} error: {e}")
             continue
+
+    print(f"🔍 Returning {len(clients_data)} clients for display")
     return clients_data
 
 
@@ -297,7 +322,7 @@ def index():
         client = Client.query.get(session['selected_client_id'])
         if client:
             six_months_ago = datetime.utcnow() - timedelta(days=180)
-            transactions_list = client.transactions.all()
+            transactions_list = client.transactions  # ✅ CORRECT!
             for tx in transactions_list:
                 if tx.date >= six_months_ago:
                     if tx.from_currency == 'USD':
@@ -350,32 +375,8 @@ def customers():
         flash('🔒 Please log in first!')
         return redirect(url_for('login'))
 
-    if request.method == 'POST':
-        id_expiry_date = None
-        id_expiry_str = request.form.get('id_expiry_date')
-        if id_expiry_str:
-            id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
-
-        new_client = Client(
-            first_name=request.form['first_name'],
-            last_name=request.form['last_name'],
-            email=request.form['email'],
-            phone=request.form['phone'],
-            apartment=request.form.get('apartment', ''),
-            civic_number=request.form['civic_number'],
-            street=request.form['street'],
-            city=request.form['city'],
-            province=request.form['province'],
-            postal_code=request.form['postal_code'],
-            id_card_number=request.form.get('id_card_number', ''),
-            id_expiry_date=id_expiry_date,
-            risk_level=request.form['risk_level'],
-            notes=request.form.get('notes', '')
-        )
-        db.session.add(new_client)
-        db.session.commit()
-        flash('✅ Customer added successfully!')
-        return redirect(url_for('customers'))
+    # ✅ REMOVED OLD POST HANDLING
+    print(f"🔍 Customers page - loading {Client.query.count()} total clients")
 
     return render_template('customers.html',
                            clients_data=calculate_clients_data(),
@@ -393,51 +394,76 @@ def select_customer(client_id):
     return redirect(url_for('index'))
 
 
-@app.route('/edit_client/<client_id>', methods=['GET', 'POST'])  # ← NO "int:"
+@app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
+    print(f"🔍 DEBUG: edit_client called with client_id={client_id}, method={request.method}")  # DEBUG
+
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    # Handle NEW customer
     if client_id == 'new':
         client = None
     else:
-        client = Client.query.get_or_404(int(client_id))  # ← Convert ONLY when NOT 'new'
+        client = Client.query.get_or_404(int(client_id))
 
     if request.method == 'POST':
+        print(f"🔍 POST DATA: {dict(request.form)}")  # DEBUG - SEE WHAT'S SENT
+
         if client_id == 'new':
             client = Client()
 
-        # Parse ID expiry date
-        id_expiry_date = None
-        id_expiry_str = request.form.get('id_expiry_date')
-        if id_expiry_str:
-            id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
+        # Parse dates safely
+        def parse_date(date_str):
+            try:
+                return datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else None
+            except:
+                return None
 
-        # Update fields
+        # REQUIRED FIELDS
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
-        client.email = request.form.get('email', '')
+        client.email = request.form['email']
         client.phone = request.form['phone']
-        client.apartment = request.form.get('apartment', '')
         client.civic_number = request.form['civic_number']
         client.street = request.form['street']
-        client.city = request.form.get('city', '')
-        client.province = request.form.get('province', '')
-        client.postal_code = request.form.get('postal_code', '')
-        client.id_card_number = request.form.get('id_card_number', '')
-        client.id_expiry_date = id_expiry_date
-        client.risk_level = request.form['risk_level']
+        client.city = request.form['city']
+        client.province = request.form['province']
+        client.postal_code = request.form['postal_code']
+
+        # OPTIONAL FIELDS
+        client.apartment = request.form.get('apartment', '')
+        client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
 
-        db.session.add(client)
-        db.session.commit()
+        # 3 IDs (OPTIONAL)
+        client.id1_type = request.form.get('id1_type', '')
+        client.id1_issued_by = request.form.get('id1_issued_by', '')
+        client.id1_number = request.form.get('id1_number', '')
+        client.id1_expiry_date = parse_date(request.form.get('id1_expiry_date'))
 
-        flash(f"✅ Client {'updated' if client_id != 'new' else 'added'} successfully!")
-        return redirect(url_for('customers'))
+        client.id2_type = request.form.get('id2_type', '')
+        client.id2_issued_by = request.form.get('id2_issued_by', '')
+        client.id2_number = request.form.get('id2_number', '')
+        client.id2_expiry_date = parse_date(request.form.get('id2_expiry_date'))
 
-    return render_template('edit_client.html', client=client, form_data=None)
+        client.id3_type = request.form.get('id3_type', '')
+        client.id3_issued_by = request.form.get('id3_issued_by', '')
+        client.id3_number = request.form.get('id3_number', '')
+        client.id3_expiry_date = parse_date(request.form.get('id3_expiry_date'))
 
+        try:
+            db.session.add(client)
+            db.session.commit()
+            print(f"✅ SAVED client ID: {client.id}")  # DEBUG
+            flash(f"✅ Client {'updated' if client_id != 'new' else 'added'} successfully! ID: {client.id}")
+            return redirect(url_for('customers'))
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ SAVE ERROR: {e}")  # DEBUG
+            flash(f"❌ Save failed: {str(e)}")
+            return redirect(url_for('edit_client', client_id='new'))
+
+    return render_template('edit_client.html', client=client)
 
 @app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
 def edit_transaction(tx_id):
