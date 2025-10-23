@@ -1,69 +1,71 @@
 {% extends "base.html" %}
-{% block title %}✏️ Edit Client - MoneyExchange Pro{% endblock %}
+{% block title %}{% if client %}✏️ Edit{% else %}👥 Add New{% endif %} Client - MoneyExchange Pro{% endblock %}
 {% block content %}
-<h2>✏️ Edit Client: {{ client.first_name }} {{ client.last_name }}</h2>
+<h2>{% if client %}✏️ Edit Client: {{ client.first_name }} {{ client.last_name }}{% else %}👥 Add New Client{% endif %}</h2>
 
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <form method="POST">
         <table style="width:100%;">
             <tr>
-                <td style="width:100px;">First Name:</td>
-                <td><input name="first_name" value="{{ form_data.first_name if form_data else client.first_name }}" required style="width:150px;"></td>
-                <td style="width:100px;">Last Name:</td>
-                <td><input name="last_name" value="{{ form_data.last_name if form_data else client.last_name }}" required style="width:150px;"></td>
+                <td style="width:100px;">First Name <span style="color:red;">*</span>:</td>
+                <td><input name="first_name" value="{{ client.first_name if client else '' }}" required style="width:150px;"></td>
+                <td style="width:100px;">Last Name <span style="color:red;">*</span>:</td>
+                <td><input name="last_name" value="{{ client.last_name if client else '' }}" required style="width:150px;"></td>
             </tr>
             <tr>
-                <td>Email:</td>
-                <td><input name="email" type="email" value="{{ form_data.email if form_data else client.email }}" required style="width:150px;"></td>
-                <td>Phone:</td>
-                <td><input name="phone" value="{{ form_data.phone if form_data else client.phone }}" required style="width:150px;"></td>
+                <td>Email <span style="color:red;">*</span>:</td>
+                <td><input name="email" type="email" value="{{ client.email if client else '' }}" required style="width:150px;"></td>
+                <td>Phone <span style="color:red;">*</span>:</td>
+                <td><input name="phone" value="{{ client.phone if client else '' }}" required style="width:150px;"></td>
             </tr>
             <tr>
                 <td>Apt #:</td>
-                <td><input name="apartment" value="{{ form_data.apartment if form_data else (client.apartment or '') }}" placeholder="101" style="width:150px;"></td>
-                <td>Civic #:</td>
-                <td><input name="civic_number" value="{{ form_data.civic_number if form_data else client.civic_number }}" required style="width:150px;"></td>
+                <td><input name="apartment" value="{{ client.apartment if client else '' }}" placeholder="101" style="width:150px;"></td>
+                <td>Civic # <span style="color:red;">*</span>:</td>
+                <td><input name="civic_number" value="{{ client.civic_number if client else '' }}" required style="width:150px;"></td>
             </tr>
             <tr>
-                <td>Street:</td>
-                <td colspan="3"><input name="street" value="{{ form_data.street if form_data else client.street }}" required style="width:100%;"></td>
+                <td>Street <span style="color:red;">*</span>:</td>
+                <td colspan="3"><input name="street" value="{{ client.street if client else '' }}" required style="width:100%;"></td>
             </tr>
             <tr>
-                <td>City:</td>
-                <td><input name="city" value="{{ form_data.city if form_data else client.city }}" required style="width:150px;"></td>
-                <td>Province:</td>
-                <td><input name="province" value="{{ form_data.province if form_data else client.province }}" required style="width:60px;"></td>
-                <td>Postal:</td>
-                <td><input name="postal_code" value="{{ form_data.postal_code if form_data else client.postal_code }}" required placeholder="M5V 2T6" style="width:80px;"></td>
+                <td>City <span style="color:red;">*</span>:</td>
+                <td><input name="city" value="{{ client.city if client else '' }}" required style="width:150px;"></td>
+                <td>Province <span style="color:red;">*</span>:</td>
+                <td><input name="province" value="{{ client.province if client else '' }}" required style="width:60px;"></td>
+                <td>Postal <span style="color:red;">*</span>:</td>
+                <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" required placeholder="M5V 2T6" style="width:80px;"></td>
             </tr>
             <tr>
                 <td>ID Card:</td>
-                <td><input type="text" name="id_card_number" value="{{ form_data.id_card_number if form_data else (client.id_card_number or '') }}" placeholder="123456789" style="width:150px;"></td>
+                <td><input type="text" name="id_card_number" value="{{ client.id_card_number if client else '' }}" placeholder="123456789" style="width:150px;"></td>
                 <td>Expiry:</td>
-                <td><input type="date" name="id_expiry_date" value="{{ form_data.id_expiry_date if form_data else (client.id_expiry_date.strftime('%Y-%m-%d') if client.id_expiry_date else '') }}" style="width:150px;"></td>
+                <td><input type="date" name="id_expiry_date" value="{{ client.id_expiry_date.strftime('%Y-%m-%d') if client and client.id_expiry_date else '' }}" style="width:150px;"></td>
             </tr>
             <tr style="background:#fff3cd;">
-                <td><strong>Risk Level:</strong></td>
+                <td><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
                 <td>
                     <select name="risk_level" required style="width:150px;">
-                        <option value="low risk" {{ 'selected' if (form_data.risk_level if form_data else client.risk_level) == 'low risk' }}>🟢 Low Risk</option>
-                        <option value="medium risk" {{ 'selected' if (form_data.risk_level if form_data else client.risk_level) == 'medium risk' }}>🟡 Medium Risk</option>
-                        <option value="high risk" {{ 'selected' if (form_data.risk_level if form_data else client.risk_level) == 'high risk' }}>🟠 High Risk</option>
-                        <option value="on hold" {{ 'selected' if (form_data.risk_level if form_data else client.risk_level) == 'on hold' }}>🔴 On Hold</option>
+                        <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>🟢 Low Risk</option>
+                        <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>🟡 Medium Risk</option>
+                        <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>🟠 High Risk</option>
+                        <option value="on hold" {{ 'selected' if client and client.risk_level == 'on hold' }}>🔴 On Hold</option>
                     </select>
                 </td>
                 <td><strong>Notes:</strong></td>
                 <td colspan="3">
                     <textarea name="notes" rows="3" placeholder="AML notes, behavior, alerts, large TX history..." 
-                              style="width:100%; min-height:90px; resize:vertical;">{{ form_data.notes if form_data else (client.notes or '') }}</textarea>
+                              style="width:100%; min-height:90px; resize:vertical;">{{ client.notes if client else '' }}</textarea>
                 </td>
             </tr>
         </table>
-        <input type="submit" value="💾 UPDATE CLIENT" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; margin-top:10px; font-size:16px;">
+        <input type="submit" value="{% if client %}💾 UPDATE CLIENT{% else %}👥 ADD NEW CLIENT{% endif %}" 
+               style="width:100%; padding:15px; background:#27ae60; color:white; border:none; margin-top:10px; font-size:16px;">
     </form>
 </div>
 
-<!-- ✅ CLIENT SUMMARY -->
+{% if client %}
+<!-- ✅ SHOW SUMMARY & TRANSACTIONS ONLY FOR EXISTING CLIENTS -->
 <style>
     .led-indicator {
         display: inline-block;
@@ -79,14 +81,13 @@
 <div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h4>📋 Client Summary</h4>
     <p><strong>Risk:</strong> 
-        {% if (form_data.risk_level if form_data else client.risk_level) == 'low risk' %}<span style="color:green;">🟢 LOW RISK</span>
-        {% elif (form_data.risk_level if form_data else client.risk_level) == 'medium risk' %}<span style="color:orange;">🟡 MEDIUM RISK</span>
-        {% elif (form_data.risk_level if form_data else client.risk_level) == 'high risk' %}<span style="color:red;">🟠 HIGH RISK</span>
+        {% if client.risk_level == 'low risk' %}<span style="color:green;">🟢 LOW RISK</span>
+        {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">🟡 MEDIUM RISK</span>
+        {% elif client.risk_level == 'high risk' %}<span style="color:red;">🟠 HIGH RISK</span>
         {% else %}<span style="color:red; font-weight:bold;">🔴 ON HOLD</span>{% endif %}
     </p>
-    <p><strong>Address:</strong> {{ (form_data.apartment if form_data else (client.apartment or '')) }} {{ form_data.civic_number if form_data else client.civic_number }} {{ form_data.street if form_data else client.street }}, {{ form_data.city if form_data else client.city }}, {{ form_data.province if form_data else client.province }} {{ form_data.postal_code if form_data else client.postal_code }}</p>
+    <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
     
-    <!-- ✅ FIXED: Transactions count -->
     {% set transactions_list = client.transactions.all() %}
     <p><strong>Transactions:</strong> {{ transactions_list|length }} | 
        <strong>Pending:</strong> 
@@ -98,7 +99,6 @@
        {% endif %}
     </p>
     
-    <!-- ✅ ID CARD INFO -->
     {% if client.id_card_number %}
     <p><strong>ID:</strong> {{ client.id_card_number[:4] }}...{{ client.id_card_number[-4:] }}
        {% if client.id_expiry_date %}
@@ -111,7 +111,6 @@
     {% endif %}
 </div>
 
-<!-- ✅ RECENT TRANSACTIONS -->
 <h3>📊 Recent Transactions ({{ transactions_list|length }})</h3>
 <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">
     <tr style="background:#f2f2f2;">
@@ -136,6 +135,7 @@
     <tr><td colspan="6" style="text-align:center; color:#999; padding:20px;">No transactions yet</td></tr>
     {% endfor %}
 </table>
+{% endif %}
 
 <div style="margin-top:20px;">
     <a href="{{ url_for('customers') }}" style="font-size:16px;">👥 Back to Customers</a>

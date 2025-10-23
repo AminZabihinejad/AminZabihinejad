@@ -393,39 +393,50 @@ def select_customer(client_id):
     return redirect(url_for('index'))
 
 
-@app.route('/edit_client/<int:client_id>', methods=['GET', 'POST'])
+@app.route('/edit_client/<client_id>', methods=['GET', 'POST'])  # ← NO "int:"
 def edit_client(client_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    client = Client.query.get_or_404(client_id)
+    # Handle NEW customer
+    if client_id == 'new':
+        client = None
+    else:
+        client = Client.query.get_or_404(int(client_id))  # ← Convert ONLY when NOT 'new'
 
     if request.method == 'POST':
+        if client_id == 'new':
+            client = Client()
+
+        # Parse ID expiry date
         id_expiry_date = None
         id_expiry_str = request.form.get('id_expiry_date')
         if id_expiry_str:
             id_expiry_date = datetime.strptime(id_expiry_str, '%Y-%m-%d').date()
 
+        # Update fields
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
-        client.email = request.form['email']
+        client.email = request.form.get('email', '')
         client.phone = request.form['phone']
         client.apartment = request.form.get('apartment', '')
         client.civic_number = request.form['civic_number']
         client.street = request.form['street']
-        client.city = request.form['city']
-        client.province = request.form['province']
-        client.postal_code = request.form['postal_code']
+        client.city = request.form.get('city', '')
+        client.province = request.form.get('province', '')
+        client.postal_code = request.form.get('postal_code', '')
         client.id_card_number = request.form.get('id_card_number', '')
         client.id_expiry_date = id_expiry_date
         client.risk_level = request.form['risk_level']
         client.notes = request.form.get('notes', '')
 
+        db.session.add(client)
         db.session.commit()
-        flash('✅ Client updated successfully!')
-        return redirect(url_for('index'))
 
-    return render_template('edit_client.html', client=client)
+        flash(f"✅ Client {'updated' if client_id != 'new' else 'added'} successfully!")
+        return redirect(url_for('customers'))
+
+    return render_template('edit_client.html', client=client, form_data=None)
 
 
 @app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
