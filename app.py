@@ -297,6 +297,17 @@ def index():
                     cad_fee_equiv = FLAT_FEE_CAD# / exchange_rate  # Convert CAD fee to from_currency
                     from_amount = exchange_needed + cad_fee_equiv
 
+        # After the calculations above
+        client_pays = f"{from_amount:,.2f} {from_currency}"
+        bank_receives = f"{to_amount:,.2f} {to_currency}"
+        fee_in_client_currency = f"{(FLAT_FEE_CAD / exchange_rate):,.2f} {from_currency}" if from_currency != 'CAD' else f"{FLAT_FEE_CAD:,.2f} CAD"
+
+        flash(
+            f"✅ Transaction ready!<br>"
+            f"• You pay: <strong>{client_pays}</strong><br>"
+            f"• Bank receives: <strong>{bank_receives}</strong><br>"
+            f"• Flat fee ({FLAT_FEE_CAD} CAD): {fee_in_client_currency}"
+        )
         new_tx = Transaction(
             id=tx_id,
             from_currency=from_currency,

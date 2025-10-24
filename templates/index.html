@@ -316,7 +316,7 @@ function updateRatePreview() {
             if (fixedCurrency === 'CAD') {
                 // ✅ CAD → OTHER: Deduct CAD fee FIRST, then convert
                 const remainingCAD = fixedAmount - currentFlatFee;
-                const netAmount = remainingCAD * rate;
+                const netAmount = remainingCAD / rate;
                 previewText = `You receive: ${netAmount.toFixed(2)} ${otherCurrency}`;
             } else {
                 // ✅ OTHER → CAD: Convert first, deduct CAD fee
@@ -328,14 +328,14 @@ function updateRatePreview() {
             // ✅ bank_fixed - INVERSE RATE LOGIC
             if (otherCurrency === 'CAD') {
                 // ✅ WANTS OTHER, PAYS CAD: Add CAD fee
-                const exchangeNeeded = fixedAmount / rate;
-                const totalPay = exchangeNeeded + currentFlatFee;
+                const exchangeNeeded = fixedAmount * rate;
+                const totalPay = exchangeNeeded + currentFlatFee ;
                 previewText = `You pay: ${totalPay.toFixed(2)} CAD`;
             } else {
                 // ✅ WANTS CAD, PAYS OTHER: Add CAD fee equivalent
-                const exchangeNeeded = fixedAmount / rate;
-                const cadFeeEquiv = currentFlatFee / rate;
-                const totalPay = exchangeNeeded + cadFeeEquiv;
+                const exchangeNeeded = (fixedAmount + currentFlatFee) / rate;
+                // const cadFeeEquiv = currentFlatFee / rate;
+                const totalPay = exchangeNeeded;
                 previewText = `You pay: ${totalPay.toFixed(2)} ${fixedCurrency}`;
             }
         }
