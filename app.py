@@ -272,29 +272,30 @@ def index():
                 if remaining_cad <= 0:
                     flash(f'❌ Amount too small! Need > ${FLAT_FEE_CAD} CAD')
                     return redirect(url_for('index'))
-                to_amount = remaining_cad * exchange_rate
+                to_amount = remaining_cad / exchange_rate
             else:
-                # ✅ CLIENT PAYS NON-CAD: Convert first, deduct CAD fee from result
-                gross_to_amount = fixed_amount * exchange_rate
-                to_amount = gross_to_amount - FLAT_FEE_CAD
-                if to_amount <= 0:
-                    flash(f'❌ Amount too small after fee! Need > ${FLAT_FEE_CAD} {to_currency}')
-                    return redirect(url_for('index'))
+                if to_currency == 'CAD':
+                    # ✅ CLIENT PAYS NON-CAD: Convert first, deduct CAD fee from result
+                    gross_to_amount = fixed_amount * exchange_rate
+                    to_amount = gross_to_amount - FLAT_FEE_CAD
+                    if to_amount <= 0:
+                        flash(f'❌ Amount too small after fee! Need > ${FLAT_FEE_CAD} {to_currency}')
+                        return redirect(url_for('index'))
 
         else:  # bank_fixed
             from_currency = other_currency
             to_currency = fixed_currency
             to_amount = fixed_amount
 
-            if from_currency == 'CAD':
+            if  to_currency== 'CAD':
                 # ✅ CLIENT PAYS CAD: Add CAD fee to payment amount
-                exchange_needed = (fixed_amount + FLAT_FEE_CAD)  * exchange_rate
+                exchange_needed = (fixed_amount + FLAT_FEE_CAD)  / exchange_rate
                 from_amount = exchange_needed
             else:
-                # ✅ CLIENT PAYS NON-CAD: Add equivalent CAD fee
-                exchange_needed = fixed_amount * exchange_rate
-                cad_fee_equiv = FLAT_FEE_CAD# / exchange_rate  # Convert CAD fee to from_currency
-                from_amount = exchange_needed + cad_fee_equiv
+                if from_currency == 'CAD':                # ✅ CLIENT PAYS NON-CAD: Add equivalent CAD fee
+                    exchange_needed = fixed_amount * exchange_rate
+                    cad_fee_equiv = FLAT_FEE_CAD# / exchange_rate  # Convert CAD fee to from_currency
+                    from_amount = exchange_needed + cad_fee_equiv
 
         new_tx = Transaction(
             id=tx_id,
