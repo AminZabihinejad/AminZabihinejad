@@ -1,43 +1,43 @@
 {% extends "base.html" %}
-{% block title %}👥 Customers - MoneyExchange Pro{% endblock %}
+{% block title %}Customers - MoneyExchange Pro{% endblock %}
 {% block content %}
-<h2>👥 Customer Management</h2>
+<h2>Customer Management</h2>
 
-<!-- 🔍 SEARCH BAR WITH RISK + STATUS FILTER + ADD BUTTON -->
+<!-- SEARCH BAR WITH RISK + STATUS FILTER + ADD BUTTON -->
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
         <form method="GET" style="display: inline; flex: 1; min-width: 600px;">
-            <input type="text" name="search" placeholder="🔍 Search Name/Email/Phone..."  
+            <input type="text" name="search" placeholder="Search Name/Phone..."  
                    value="{{ request.args.get('search', '') }}" style="width:300px; padding:8px; margin-right:10px;">
             
             Risk: <select name="risk_level" style="margin:0 10px; padding:5px; width:120px;">
                 <option value="">All Risks</option>
-                <option value="low risk" {{ 'selected' if request.args.get('risk_level') == 'low risk' }}>🟢 Low</option>
-                <option value="medium risk" {{ 'selected' if request.args.get('risk_level') == 'medium risk' }}>🟡 Med</option>
-                <option value="high risk" {{ 'selected' if request.args.get('risk_level') == 'high risk' }}>🟠 High</option>
-                <option value="on hold" {{ 'selected' if request.args.get('risk_level') == 'on hold' }}>🔴 Hold</option>
+                <option value="low risk" {{ 'selected' if request.args.get('risk_level') == 'low risk' }}>Low</option>
+                <option value="medium risk" {{ 'selected' if request.args.get('risk_level') == 'medium risk' }}>Med</option>
+                <option value="high risk" {{ 'selected' if request.args.get('risk_level') == 'high risk' }}>High</option>
+                <option value="on hold" {{ 'selected' if request.args.get('risk_level') == 'on hold' }}>Hold</option>
             </select>
             
             Status: <select name="tx_status" style="margin:0 10px; padding:5px; width:140px;">
                 <option value="">All Status</option>
-                <option value="pending" {{ 'selected' if request.args.get('tx_status') == 'pending' }}>⏳ Pending</option>
-                <option value="closed" {{ 'selected' if request.args.get('tx_status') == 'closed' }}>✅ Closed</option>
+                <option value="pending" {{ 'selected' if request.args.get('tx_status') == 'pending' }}>Pending</option>
+                <option value="closed" {{ 'selected' if request.args.get('tx_status') == 'closed' }}>Closed</option>
             </select>
             
             <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none; border-radius:4px;">
             <a href="{{ url_for('customers') }}" style="margin-left:10px; color:#3498db;">[Clear]</a>
         </form>
         
-        <!-- ✅ ADD NEW CUSTOMER BUTTON -->
+        <!-- ADD NEW CUSTOMER BUTTON -->
         <a href="{{ url_for('edit_client', client_id='new') }}" 
            style="background:#27ae60; color:white; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:bold; font-size:16px; box-shadow:0 3px 10px rgba(39,174,96,0.3);">
-           👥 + ADD NEW CUSTOMER
+           + ADD NEW CUSTOMER
         </a>
     </div>
 </div>
 
-<!-- ✅ CUSTOMER LIST -->
-<h3>📋 All Customers ({{ clients_data|length }})</h3>
+<!-- CUSTOMER LIST -->
+<h3>All Customers ({{ clients_data|length }})</h3>
 <style>
     .led-indicator {
         display: inline-block;
@@ -54,9 +54,7 @@
         <th style="padding:10px;">BR</th>
         <th style="padding:10px;">ID</th>
         <th style="padding:10px;">Name</th>
-        <th style="padding:10px;">Email</th>
         <th style="padding:10px;">Phone</th>
-        <th style="padding:10px;">City</th>
         <th style="padding:10px;">ID Card</th>
         <th style="padding:10px;">Risk</th>
         <th style="padding:10px; width:100px;">Notes</th>
@@ -71,9 +69,7 @@
         <td style="padding:8px;"><span class="led-indicator" style="background-color: {{ data.led_color }};" title="Business Relation: ${{ '%.2f'|format(data.total_volume_usd) }} over past 6 months"></span></td>
         <td style="padding:8px; font-family:monospace;">{{ data.client.id }}</td>
         <td style="padding:8px;"><strong>{{ data.client.first_name }} {{ data.client.last_name }}</strong></td>
-        <td style="padding:8px;">{{ data.client.email or '—' }}</td>
         <td style="padding:8px;">{{ data.client.phone[:12] }}...</td>
-        <td style="padding:8px;">{{ data.client.city or '—' }}</td>
         <td style="padding:8px; font-size:11px;">
             {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
                 {% if data.client.id1_number %}
@@ -93,10 +89,10 @@
             {% endif %}
         </td>
         <td style="padding:8px; text-align:center; font-weight:bold;">
-            {% if data.client.risk_level == 'low risk' %}<span style="color:green;">🟢 LOW</span>
-            {% elif data.client.risk_level == 'medium risk' %}<span style="color:orange;">🟡 MED</span>
-            {% elif data.client.risk_level == 'high risk' %}<span style="color:red;">🟠 HIGH</span>
-            {% else %}<span style="color:red;">🔴 HOLD</span>{% endif %}
+            {% if data.client.risk_level == 'low risk' %}<span style="color:green;">LOW</span>
+            {% elif data.client.risk_level == 'medium risk' %}<span style="color:orange;">MED</span>
+            {% elif data.client.risk_level == 'high risk' %}<span style="color:red;">HIGH</span>
+            {% else %}<span style="color:red;">HOLD</span>{% endif %}
         </td>
         <td style="padding:8px;">
             {% if data.client.notes %}
@@ -112,9 +108,9 @@
         <td style="padding:8px; text-align:center;">
             {% set pending_tx = data.transactions_list|selectattr('status', 'equalto', 'pending')|list %}
             {% if pending_tx|length > 0 %}
-                <span style="color:red; font-weight:bold;">🚨 {{ pending_tx|length }}</span>
+                <span style="color:red; font-weight:bold;">{{ pending_tx|length }}</span>
             {% else %}
-                <span style="color:green;">✅ 0</span>
+                <span style="color:green;">0</span>
             {% endif %}
         </td>
         <td style="padding:8px; font-size:11px; text-align:center; color:#666;">
@@ -125,21 +121,20 @@
                 <a href="{{ url_for('select_customer', client_id=data.client.id) }}" 
                    style="background:#3498db; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">SELECT</a>
                 <a href="{{ url_for('edit_client', client_id=data.client.id) }}" 
-                   style="background:#f39c12; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">✏️ EDIT</a>
+                   style="background:#f39c12; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">EDIT</a>
             </div>
         </td>
     </tr>
     {% else %}
     <tr>
-        <td colspan="14" style="padding:40px; text-align:center; color:#999; font-size:16px;">
-            <div style="font-size:48px; margin-bottom:15px;">👥</div>
-            No customers found
+        <td colspan="12" style="padding:40px; text-align:center; color:#999; font-size:16px;">
+            <div style="font-size:48px; margin-bottom:15px;">No customers found</div>
         </td>
     </tr>
     {% endfor %}
 </table>
 
 <div style="margin-top:20px;">
-    <a href="{{ url_for('index') }}" style="font-size:16px;">🏠 Dashboard</a>
+    <a href="{{ url_for('index') }}" style="font-size:16px;">Dashboard</a>
 </div>
 {% endblock %}
