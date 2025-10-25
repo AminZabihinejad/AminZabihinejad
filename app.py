@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 import requests
 import json
 import csv
@@ -11,6 +11,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
 import uuid
+from math import ceil
+import sqlalchemy as sa
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'piggybank2025'
@@ -537,58 +539,98 @@ def edit_transaction(tx_id):
     return render_template('edit_transaction.html', tx=tx)
 
 
+
 @app.route('/transactions')
 def transactions():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    search_date = request.args.get('date', '')
+    # === GET PAGINATION & FILTERS ===
+    page = int(request.args.get('page', 1))
+    per_page = 10
+
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
     search_client = request.args.get('client_name', '')
-    search_from = request.args.get('from_currency', '')
-    search_to = request.args.get('to_currency', '')
-    search_fintrac = request.args.get('fintrac', '')
-    search_status = request.args.get('status', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
+    status = request.args.get('status', '')
 
+    # === BUILD BASE QUERY ===
     query = Transaction.query.order_by(Transaction.date.desc())
-    if session.get('is_admin'):
-        all_tx = query.all()
-    else:
+
+    # === APPLY CLIENT FILTER (ADMIN vs USER) ===
+    if not session.get('is_admin'):
         client_id = session.get('selected_client_id')
-        if client_id:
-            all_tx = query.filter_by(client_id=client_id).all()
-        else:
-            all_tx = []
+        if not client_id:
+            return render_template('transactions.html', transactions=[], total_count=0, total_pages=0, page=1,
+                                   from_date=from_date, to_date=to_date,
+                                   search_client=search_client, search_from=search_from, search_to=search_to,
+                                   fintrac=fintrac, status=status,
+                                   current_fee=round(FEE_PERCENTAGE * 100, 1),
+                                   current_flat_fee=round(FLAT_FEE_CAD, 2))
+        query = query.filter(Transaction.client_id == client_id)
 
-    if search_fintrac == 'yes':
-        all_tx = [tx for tx in all_tx if tx.is_fintrac]
-    elif search_fintrac == 'no':
-        all_tx = [tx for tx in all_tx if not tx.is_fintrac]
+    # === DATE RANGE FILTER ===
+    if from_date:
+        try:
+            start_dt = datetime.strptime(from_date, '%Y-%m-%d')
+            query = query.filter(Transaction.date >= start_dt)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            end_dt = datetime.strptime(to_date, '%Y-%m-%d')
+            end_dt = datetime.combine(end_dt, time.max)
+            query = query.filter(Transaction.date <= end_dt)
+        except ValueError:
+            pass
 
-    if search_status == 'closed':
-        all_tx = [tx for tx in all_tx if tx.status == 'closed']
-    elif search_status == 'pending':
-        all_tx = [tx for tx in all_tx if tx.status == 'pending']
-
-    if search_date:
-        search_date_obj = datetime.strptime(search_date, '%Y-%m-%d')
-        all_tx = [tx for tx in all_tx if tx.date.date() == search_date_obj.date()]
+    # === OTHER FILTERS (SQL) ===
     if search_client:
-        all_tx = [tx for tx in all_tx if
-                  search_client.lower() in f"{tx.client.first_name} {tx.client.last_name}".lower()]
+        name = f"%{search_client}%"
+        query = query.join(Client).filter(
+            sa.or_(
+                Client.first_name.ilike(name),
+                Client.last_name.ilike(name),
+                sa.func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
+            )
+        )
     if search_from:
-        all_tx = [tx for tx in all_tx if tx.from_currency.upper() == search_from.upper()]
+        query = query.filter(Transaction.from_currency == search_from)
     if search_to:
-        all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
+        query = query.filter(Transaction.to_currency == search_to)
+    if fintrac == 'yes':
+        query = query.filter(Transaction.is_fintrac == True)
+    elif fintrac == 'no':
+        query = query.filter(Transaction.is_fintrac == False)
+    if status:
+        query = query.filter(Transaction.status == status)
 
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
+    # === COUNT TOTAL FOR PAGINATION ===
+    total_count = query.count()
+    total_pages = ceil(total_count / per_page) if total_count > 0 else 1
+    page = max(1, min(page, total_pages))  # Clamp page
 
-    return render_template('transactions.html', transactions=all_tx,
-                           search_date=search_date, search_client=search_client,
-                           search_from=search_from, search_to=search_to,
-                           search_fintrac=search_fintrac, search_status=search_status,
-                           current_fee=current_fee, current_flat_fee=current_flat_fee,
-                           filtered_transactions=len(all_tx))
+    # === PAGINATE ===
+    transactions = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    # === RENDER ===
+    return render_template('transactions.html',
+                           transactions=transactions,
+                           page=page,
+                           total_count=total_count,
+                           total_pages=total_pages,
+                           from_date=from_date,
+                           to_date=to_date,
+                           search_client=search_client,
+                           search_from=search_from,
+                           search_to=search_to,
+                           fintrac=fintrac,
+                           status=status,
+                           current_fee=round(FEE_PERCENTAGE * 100, 1),
+                           current_flat_fee=round(FLAT_FEE_CAD, 2))
 
 
 @app.route('/update_status/<tx_id>', methods=['POST'])

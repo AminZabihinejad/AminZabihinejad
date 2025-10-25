@@ -1,18 +1,16 @@
 {% extends "base.html" %}
-
 {% block title %}Operation - MoneyExchange Pro{% endblock %}
-
 {% block content %}
-    <h2>⚙️ Transaction Operations</h2>
-    
-    <!-- ✅ FEE CONTROL - ADMIN ONLY -->
+    <h2>Transaction Operations</h2>
+
+    <!-- FEE CONTROL - ADMIN ONLY -->
     {% if session.is_admin %}
     <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
-        <strong>💰 Fee Control:</strong>
+        <strong>Fee Control:</strong>
         <form method="POST" action="{{ url_for('set_fees') }}" style="display:inline;">
             % Fee: <input type="number" name="fee_percentage" step="0.1" value="{{ current_fee }}" style="width:50px;">%
             Flat: $<input type="number" name="flat_fee_cad" step="0.01" value="{{ current_flat_fee }}" style="width:60px;">CAD
-            <input type="submit" value="💾 SET FEES" style="padding:8px 15px; background:#27ae60; color:white; border:none;">
+            <input type="submit" value="SET FEES" style="padding:8px 15px; background:#27ae60; color:white; border:none;">
         </form>
         <p style="margin:5px 0; font-weight:bold;">
             <strong>Current:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD | 
@@ -20,36 +18,39 @@
         </p>
     </div>
     {% endif %}
-    
-    <!-- ✅ CLIENT FILTER -->
+
+    <!-- CLIENT FILTER -->
     <div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:10px;">
-        <strong>👥 Client Filter:</strong>
+        <strong>Client Filter:</strong>
         {% if session.selected_client_id %}
-            <span style="color:#856404;">{{ session.selected_client_name }} ✅</span>
+            <span style="color:#856404;">{{ session.selected_client_name }} Selected</span>
             <a href="{{ url_for('index') }}" style="color:#856404;">[Change Client]</a>
         {% else %}
             <span style="color:#856404;">ALL CLIENTS</span>
             <a href="{{ url_for('index') }}" style="color:#856404;">[Select Client]</a>
         {% endif %}
     </div>
-    
-    <!-- ✅ SEARCH FORM - 2 STATES ONLY! -->
+
+    <!-- SEARCH + DATE RANGE FORM -->
     <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
-            <strong>🔍 Search:</strong>
-            <input type="date" name="date" value="{{ search_date }}" style="margin-right:10px;">
-            Client: <input type="text" name="client_name" placeholder="John Doe" value="{{ search_client }}" style="width:120px; margin-right:10px;">
-            From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}" style="width:60px; margin-right:10px;">
-            To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}" style="width:60px; margin-right:10px;">
-            FINTRAC: <select name="fintrac" style="margin-right:10px;">
+            <strong>Search:</strong>
+            <label>From: <input type="date" name="from_date" value="{{ from_date }}" style="width:130px;"></label>
+            <label>To: <input type="date" name="to_date" value="{{ to_date }}" style="width:130px;"></label>
+            Client: <input type="text" name="client_name" placeholder="John Doe" value="{{ search_client }}" style="width:120px;">
+            From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}" style="width:60px;">
+            To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}" style="width:60px;">
+            FINTRAC: 
+            <select name="fintrac" style="margin-right:10px;">
                 <option value="">All</option>
-                <option value="yes" {{ 'selected' if request.args.get('fintrac') == 'yes' }}>🚨 YES</option>
-                <option value="no" {{ 'selected' if request.args.get('fintrac') == 'no' }}>✅ NO</option>
+                <option value="yes" {{ 'selected' if fintrac == 'yes' }}>YES</option>
+                <option value="no" {{ 'selected' if fintrac == 'no' }}>NO</option>
             </select>
-            STATUS: <select name="status" style="margin-right:10px;">
+            STATUS: 
+            <select name="status" style="margin-right:10px;">
                 <option value="">All</option>
-                <option value="closed" {{ 'selected' if request.args.get('status') == 'closed' }}>🟢 CLOSED</option>
-                <option value="pending" {{ 'selected' if request.args.get('status') == 'pending' }}>⏳ PENDING</option>
+                <option value="closed" {{ 'selected' if status == 'closed' }}>CLOSED</option>
+                <option value="pending" {{ 'selected' if status == 'pending' }}>PENDING</option>
             </select>
             <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none;">
             <a href="{{ url_for('transactions') }}" style="color:blue; margin-left:10px;">[Clear All]</a>
@@ -57,20 +58,18 @@
     </div>
 
     {% if transactions %}
-        <!-- ✅ EXPORT BUTTON -->
+        <!-- EXPORT BUTTON (with current filters) -->
         <div style="text-align:center; margin-bottom:15px;">
             <a href="{{ url_for('export_csv', 
-                date=search_date, 
-                client_name=search_client, 
-                from_currency=search_from, 
-                to_currency=search_to, 
-                fintrac=request.args.get('fintrac', ''),
-                status=request.args.get('status', '')) }}" 
+                from_date=from_date, to_date=to_date,
+                client_name=search_client, from_currency=search_from, to_currency=search_to,
+                fintrac=fintrac, status=status) }}" 
                style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
-                💾 EXPORT {{ transactions|length }} FILTERED TRANSACTIONS CSV
+                EXPORT {{ total_count }} FILTERED TRANSACTIONS CSV
             </a>
         </div>
 
+        <!-- TRANSACTION TABLE -->
         <table style="width:100%; border-collapse: collapse; font-size:12px;">
             <tr style="background:#f2f2f2;">
                 <th>ID</th>
@@ -78,7 +77,7 @@
                 <th>Date</th>
                 <th>From</th>
                 <th>Amount</th>
-                <th>→ To</th>
+                <th>To</th>
                 <th>Amount</th>
                 <th>Rate</th>
                 <th>Fee</th>
@@ -110,16 +109,16 @@
                     <td style="color: #27ae60; font-weight: bold;">${{ "%.2f"|format(profit) }}</td>
                     <td style="text-align:center;">
                         {% if tx.is_fintrac %}
-                            <span style="background:#e74c3c; color:white; padding:3px 8px; border-radius:3px; font-weight:bold;">🚨 YES</span>
+                            <span style="background:#e74c3c; color:white; padding:3px 8px; border-radius:3px; font-weight:bold;">YES</span>
                         {% else %}
-                            <span style="background:#27ae60; color:white; padding:3px 6px; border-radius:3px;">✅ NO</span>
+                            <span style="background:#27ae60; color:white; padding:3px 6px; border-radius:3px;">NO</span>
                         {% endif %}
                     </td>
                     <td style="text-align:center;">
                         <form method="POST" action="{{ url_for('update_status', tx_id=tx.id) }}" style="display:inline;">
                             <select name="status" onchange="this.form.submit()" style="font-size:11px; padding:2px; border:1px solid #ddd;">
-                                <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>🟢 CLOSED</option>
-                                <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>⏳ PENDING</option>
+                                <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>CLOSED</option>
+                                <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>PENDING</option>
                             </select>
                         </form>
                     </td>
@@ -128,7 +127,7 @@
                             <a href="{{ url_for('download_receipt', tx_id=tx.id) }}" 
                                style="background:#27ae60; color:white; padding:5px 8px; text-decoration:none; border-radius:3px; font-size:10px;" 
                                title="{{ tx.receipt_filename }}">
-                                📄 DOWNLOAD
+                                DOWNLOAD
                             </a>
                         {% else %}
                             <span style="color:#999; font-size:10px;">—</span>
@@ -136,27 +135,89 @@
                     </td>
                     <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
                     <td>
-                        <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px;">✏️ EDIT</a>
-                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete transaction #{{ tx.id }}?')">🗑️</a>
+                        <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px;">EDIT</a>
+                        <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" style="background:#e74c3c; color:white; padding:5px 8px; margin-left:5px;" onclick="return confirm('Delete transaction #{{ tx.id }}?')">DELETE</a>
                     </td>
                 </tr>
             {% endfor %}
         </table>
-        <p style="margin-top:10px; font-weight:bold;">
-    <em>Showing {{ transactions|length }} transactions | 
-    {% set exchange_txs = transactions|selectattr('from_amount', '>', 0)|list %}
-    Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
-    <span style="color:#27ae60;">Total Profit: ${{ "%.2f"|format((exchange_txs|sum(attribute='from_amount') * current_fee / 100) + (exchange_txs|length * current_flat_fee)) }} ({{ exchange_txs|length }} exchanges)</span>
-    </em>
-</p>
+
+        <!-- PAGINATION -->
+        <div style="text-align:center; margin:20px 0; font-size:14px;">
+            <strong>
+                Showing {{ ((page - 1) * 10 + 1) }}–{{ [page * 10, total_count]|min }} of {{ total_count }} transactions
+            </strong>
+            <div style="margin-top:10px;">
+                {% if page > 1 %}
+                    <a href="{{ url_for('transactions', page=page-1,
+                        from_date=from_date, to_date=to_date,
+                        client_name=search_client, from_currency=search_from, to_currency=search_to,
+                        fintrac=fintrac, status=status) }}" 
+                       style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
+                        Previous
+                    </a>
+                {% else %}
+                    <span style="margin:0 5px; padding:6px 12px; background:#ccc; color:#666; border-radius:4px;">Previous</span>
+                {% endif %}
+
+                {% set start_page = [page - 2, 1]|max %}
+                {% set end_page = [page + 2, total_pages]|min %}
+                {% if start_page > 1 %}
+                    <a href="{{ url_for('transactions', page=1, **request.args.to_dict(flat=False)) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">1</a>
+                    {% if start_page > 2 %}...{% endif %}
+                {% endif %}
+
+                {% for p in range(start_page, end_page + 1) %}
+                    {% if p == page %}
+                        <strong style="margin:0 3px; padding:4px 8px; background:#27ae60; color:white; border-radius:3px;">{{ p }}</strong>
+                    {% else %}
+                        <a href="{{ url_for('transactions', page=p,
+                            from_date=from_date, to_date=to_date,
+                            client_name=search_client, from_currency=search_from, to_currency=search_to,
+                            fintrac=fintrac, status=status) }}" 
+                           style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">
+                            {{ p }}
+                        </a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if end_page < total_pages %}
+                    {% if end_page < total_pages - 1 %}...{% endif %}
+                    <a href="{{ url_for('transactions', page=total_pages, **request.args.to_dict(flat=False)) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">{{ total_pages }}</a>
+                {% endif %}
+
+                {% if page < total_pages %}
+                    <a href="{{ url_for('transactions', page=page+1,
+                        from_date=from_date, to_date=to_date,
+                        client_name=search_client, from_currency=search_from, to_currency=search_to,
+                        fintrac=fintrac, status=status) }}" 
+                       style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
+                        Next
+                    </a>
+                {% else %}
+                    <span style="margin:0 5px; padding:6px 12px; background:#ccc; color:#666; border-radius:4px;">Next</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- TOTALS -->
+        <p style="margin-top:10px; font-weight:bold; text-align:center;">
+            <em>
+                Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
+                <span style="color:#27ae60;">
+                    Total Profit: ${{ "%.2f"|format((transactions|sum(attribute='from_amount') * current_fee / 100) + (transactions|length * current_flat_fee)) }}
+                    ({{ transactions|length }} exchanges on this page)
+                </span>
+            </em>
+        </p>
     {% else %}
         <div style="text-align:center; padding:30px; color:#666;">
             <h3>No transactions found!</h3>
-            <p>Select a client and add transactions from <a href="{{ url_for('index') }}">📊 Overview</a></p>
+            <p>Select a client and add transactions from <a href="{{ url_for('index') }}">Overview</a></p>
         </div>
     {% endif %}
 
     <div style="margin-top:20px; text-align:center;">
-        <a href="{{ url_for('index') }}" style="font-size:16px;">🏠 Back to Overview</a>
+        <a href="{{ url_for('index') }}" style="font-size:16px;">Back to Overview</a>
     </div>
 {% endblock %}
