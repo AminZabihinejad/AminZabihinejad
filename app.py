@@ -20,12 +20,17 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# === UPLOAD CONFIG ===
 UPLOAD_FOLDER = 'uploads'
+ID_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'id_files')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(ID_UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
 
+# === MODELS ===
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
@@ -50,27 +55,34 @@ class Client(db.Model):
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # ✅ NEW ID FIELDS (OPTIONAL)
+    # === 3 ID FIELDS + FILE UPLOAD ===
     id1_type = db.Column(db.String(50))
     id1_issued_by = db.Column(db.String(100))
     id1_number = db.Column(db.String(50))
     id1_expiry_date = db.Column(db.Date)
+    id1_filename = db.Column(db.String(255))
+    id1_filesize = db.Column(db.Integer)
 
     id2_type = db.Column(db.String(50))
     id2_issued_by = db.Column(db.String(100))
     id2_number = db.Column(db.String(50))
     id2_expiry_date = db.Column(db.Date)
+    id2_filename = db.Column(db.String(255))
+    id2_filesize = db.Column(db.Integer)
 
     id3_type = db.Column(db.String(50))
     id3_issued_by = db.Column(db.String(100))
     id3_number = db.Column(db.String(50))
     id3_expiry_date = db.Column(db.Date)
-
-    # Legacy fields (keep for compatibility)
-    #id_card_number = db.Column(db.String(50))
-    #id_expiry_date = db.Column(db.Date)
+    id3_filename = db.Column(db.String(255))
+    id3_filesize = db.Column(db.Integer)
+    # === INSIDE class Client(db.Model): ===
+    id1_last_download = db.Column(db.DateTime)
+    id2_last_download = db.Column(db.DateTime)
+    id3_last_download = db.Column(db.DateTime)
 
     transactions = db.relationship('Transaction', backref='client', lazy=True)
+
 
 class Transaction(db.Model):
     id = db.Column(db.String(11), primary_key=True)
@@ -87,6 +99,7 @@ class Transaction(db.Model):
     status = db.Column(db.String(10), default='closed')
 
 
+# === DATABASE INIT ===
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(username='admin').first():
@@ -94,14 +107,26 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
 
-# ✅ GLOBAL FEES - 0% PERCENTAGE, $5 FLAT FEE
+
+# === GLOBALS ===
 FEE_PERCENTAGE = 0.0
 FLAT_FEE_CAD = 5.0
 
 
+# === HELPERS ===
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
+def save_id_file(file, client_id, id_num):
+    """Save uploaded ID file and return (filename, filesize)"""
+    if file and file.filename and allowed_file(file.filename):
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = secure_filename(f"{client_id}_{id_num}_{uuid.uuid4().hex[:8]}.{ext}")
+        path = os.path.join(app.config['ID_UPLOAD_FOLDER'], filename)
+        file.save(path)
+        return filename, os.path.getsize(path)
+    return None, None
 
 def interpolate_color(volume):
     min_volume = 3000
@@ -113,8 +138,7 @@ def interpolate_color(volume):
     ratio = (volume - min_volume) / (max_volume - min_volume)
     red = int(255 * ratio)
     green = int(255 * (1 - ratio))
-    blue = 0
-    return f"#{red:02X}{green:02X}{blue:02X}"
+    return f"#{red:02X}{green:02X}00"
 
 
 def convert_to_usd(amount, currency):
@@ -132,7 +156,6 @@ def calculate_clients_data():
             db.or_(
                 Client.first_name.ilike(f'%{search}%'),
                 Client.last_name.ilike(f'%{search}%'),
-                Client.email.ilike(f'%{search}%'),
                 Client.phone.ilike(f'%{search}%')
             )
         )
@@ -140,36 +163,27 @@ def calculate_clients_data():
         query = query.filter(Client.risk_level == risk_level)
 
     clients = query.all()
-    print(f"🔍 LOADED {len(clients)} clients from DB")
-
     six_months_ago = datetime.utcnow() - timedelta(days=180)
     clients_data = []
 
     for client in clients:
-        try:
-            # ✅ FIX: client.transactions IS ALREADY A LIST - NO .all()!
-            transactions_list = client.transactions  # ← THIS IS THE FIX!
-            total_volume_usd = 0
-            for tx in transactions_list:
-                if tx.date >= six_months_ago:
-                    if tx.from_currency == 'USD':
-                        total_volume_usd += tx.from_amount
-                    elif tx.to_currency == 'USD':
-                        total_volume_usd += tx.to_amount
-                    else:
-                        total_volume_usd += convert_to_usd(tx.from_amount, tx.from_currency)
-            led_color = interpolate_color(total_volume_usd)
-            clients_data.append({
-                'client': client,
-                'total_volume_usd': round(total_volume_usd, 2),
-                'led_color': led_color,
-                'transactions_list': transactions_list
-            })
-        except Exception as e:
-            print(f"❌ Client {client.id} error: {e}")
-            continue
-
-    print(f"🔍 Returning {len(clients_data)} clients for display")
+        transactions_list = client.transactions
+        total_volume_usd = 0
+        for tx in transactions_list:
+            if tx.date >= six_months_ago:
+                if tx.from_currency == 'USD':
+                    total_volume_usd += tx.from_amount
+                elif tx.to_currency == 'USD':
+                    total_volume_usd += tx.to_amount
+                else:
+                    total_volume_usd += convert_to_usd(tx.from_amount, tx.from_currency)
+        led_color = interpolate_color(total_volume_usd)
+        clients_data.append({
+            'client': client,
+            'total_volume_usd': round(total_volume_usd, 2),
+            'led_color': led_color,
+            'transactions_list': transactions_list
+        })
     return clients_data
 
 
@@ -182,8 +196,7 @@ def generate_transaction_id(transaction_date):
         Transaction.date < end_of_day
     ).count()
     seq_number = tx_count + 1
-    seq_str = f'{seq_number:03d}'
-    return f'{date_str}{seq_str}'
+    return f'{date_str}{seq_number:03d}'
 
 
 def get_balances():
@@ -199,15 +212,26 @@ def get_balances():
 
     balances = {}
     for tx in transactions:
-        if tx.from_amount == 0:  # DEPOSIT
+        if tx.from_amount == 0:
             balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
-        else:  # EXCHANGE: Exchange RECEIVES from_amount, PAYS to_amount
+        else:
             balances[tx.from_currency] = balances.get(tx.from_currency, 0) + tx.from_amount
             balances[tx.to_currency] = balances.get(tx.to_currency, 0) - tx.to_amount
-
     return {k: round(v, 2) for k, v in balances.items()}
 
 
+# === JINJA FILTER: FILESIZE FORMAT ===
+def filesizeformat(value):
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if value < 1024.0:
+            return f"{value:.1f} {unit}"
+        value /= 1024.0
+    return f"{value:.1f} TB"
+
+app.jinja_env.filters['filesizeformat'] = filesizeformat
+
+
+# === ROUTES ===
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -227,7 +251,6 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
-
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -428,19 +451,12 @@ def profile():
                            current_fee=current_fee, current_flat_fee=current_flat_fee)
 
 
-@app.route('/customers', methods=['GET', 'POST'])
+@app.route('/customers')
 def customers():
     if 'user_id' not in session:
-        flash('🔒 Please log in first!')
         return redirect(url_for('login'))
-
-    # ✅ REMOVED OLD POST HANDLING
-    print(f"🔍 Customers page - loading {Client.query.count()} total clients")
-
     return render_template('customers.html',
                            clients_data=calculate_clients_data(),
-                           request=request,
-                           form_data={},
                            now=datetime.utcnow().date())
 
 
@@ -455,30 +471,16 @@ def select_customer(client_id):
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
-    print(f"🔍 DEBUG: edit_client called with client_id={client_id}, method={request.method}")  # DEBUG
-
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    if client_id == 'new':
-        client = None
-    else:
-        client = Client.query.get_or_404(int(client_id))
+    client = None if client_id == 'new' else Client.query.get_or_404(int(client_id))
 
     if request.method == 'POST':
-        print(f"🔍 POST DATA: {dict(request.form)}")  # DEBUG - SEE WHAT'S SENT
-
-        if client_id == 'new':
+        if not client:
             client = Client()
 
-        # Parse dates safely
-        def parse_date(date_str):
-            try:
-                return datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else None
-            except:
-                return None
-
-        # REQUIRED FIELDS
+        # === BASIC FIELDS ===
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
         client.email = request.form['email']
@@ -488,41 +490,59 @@ def edit_client(client_id):
         client.city = request.form['city']
         client.province = request.form['province']
         client.postal_code = request.form['postal_code']
-
-        # OPTIONAL FIELDS
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
 
-        # 3 IDs (OPTIONAL)
-        client.id1_type = request.form.get('id1_type', '')
-        client.id1_issued_by = request.form.get('id1_issued_by', '')
-        client.id1_number = request.form.get('id1_number', '')
-        client.id1_expiry_date = parse_date(request.form.get('id1_expiry_date'))
+        # === 3 IDs ===
+        for i in range(1, 4):
+            prefix = f'id{i}_'
+            setattr(client, prefix + 'type', request.form.get(prefix + 'type', ''))
+            setattr(client, prefix + 'issued_by', request.form.get(prefix + 'issued_by', ''))
+            setattr(client, prefix + 'number', request.form.get(prefix + 'number', ''))
+            date_str = request.form.get(prefix + 'expiry_date')
+            try:
+                expiry = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else None
+            except:
+                expiry = None
+            setattr(client, prefix + 'expiry_date', expiry)
 
-        client.id2_type = request.form.get('id2_type', '')
-        client.id2_issued_by = request.form.get('id2_issued_by', '')
-        client.id2_number = request.form.get('id2_number', '')
-        client.id2_expiry_date = parse_date(request.form.get('id2_expiry_date'))
-
-        client.id3_type = request.form.get('id3_type', '')
-        client.id3_issued_by = request.form.get('id3_issued_by', '')
-        client.id3_number = request.form.get('id3_number', '')
-        client.id3_expiry_date = parse_date(request.form.get('id3_expiry_date'))
+            # === FILE UPLOAD ===
+            file = request.files.get(prefix + 'file')
+            if file and file.filename:
+                filename, filesize = save_id_file(file, client.id if client.id else 'temp', i)
+                if filename:
+                    setattr(client, prefix + 'filename', filename)
+                    setattr(client, prefix + 'filesize', filesize)
 
         try:
             db.session.add(client)
             db.session.commit()
-            print(f"✅ SAVED client ID: {client.id}")  # DEBUG
-            flash(f"✅ Client {'updated' if client_id != 'new' else 'added'} successfully! ID: {client.id}")
+            flash(f"Client {'added' if client_id == 'new' else 'updated'}! ID: {client.id}")
             return redirect(url_for('customers'))
         except Exception as e:
             db.session.rollback()
-            print(f"❌ SAVE ERROR: {e}")  # DEBUG
-            flash(f"❌ Save failed: {str(e)}")
-            return redirect(url_for('edit_client', client_id='new'))
+            flash(f"Save failed: {str(e)}")
 
     return render_template('edit_client.html', client=client)
+
+
+@app.route('/download_id/<int:client_id>/<int:id_num>')
+def download_id_file(client_id, id_num):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    client = Client.query.get_or_404(client_id)
+    filename = getattr(client, f'id{id_num}_filename')
+    if not filename:
+        flash('File not found!')
+        return redirect(url_for('edit_client', client_id=client_id))
+
+    # UPDATE LAST DOWNLOAD TIME
+    setattr(client, f'id{id_num}_last_download', datetime.utcnow())
+    db.session.commit()
+
+    return send_from_directory(app.config['ID_UPLOAD_FOLDER'], filename, as_attachment=True)
 
 @app.route('/edit_transaction/<tx_id>', methods=['GET', 'POST'])
 def edit_transaction(tx_id):

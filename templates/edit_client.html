@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}{% if client %}✏️ Edit{% else %}👥 Add New{% endif %} Client - MoneyExchange Pro{% endblock %}
+{% block title %}{% if client %}Edit{% else %}Add New{% endif %} Client - MoneyExchange Pro{% endblock %}
 {% block content %}
-<h2>{% if client %}✏️ Edit Client: {{ client.first_name }} {{ client.last_name }}{% else %}👥 Add New Client{% endif %}</h2>
+<h2>{% if client %}Edit Client: {{ client.first_name }} {{ client.last_name }}{% else %}Add New Client{% endif %}</h2>
 
-<!-- ✅ CREATED DATE - NON-EDITABLE (ONLY FOR EXISTING CLIENTS) -->
+<!-- CREATED DATE -->
 {% if client %}
 <div style="background:#d4edda; padding:15px; border-radius:8px; margin-bottom:20px; border-left:5px solid #28a745;">
-    <h4>📅 Registration Date</h4>
+    <h4>Registration Date</h4>
     <p><strong>Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
     <small style="color:#666;">This date cannot be changed</small>
 </div>
 {% endif %}
 
-<!-- ✅ FORM STARTS HERE -->
-<form method="POST" id="clientForm">
+<!-- FORM WITH FILE UPLOAD -->
+<form method="POST" id="clientForm" enctype="multipart/form-data">
 
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
-    <h3>👤 Basic Information</h3>
+    <h3>Basic Information</h3>
     <table style="width:100%;">
         <tr>
             <td style="width:110px;">First Name <span style="color:red;">*</span>:</td>
@@ -34,7 +34,7 @@
 </div>
 
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
-    <h3>🏠 Address</h3>
+    <h3>Address</h3>
     <table style="width:100%;">
         <tr>
             <td style="width:110px;">Apt #:</td>
@@ -57,23 +57,23 @@
     </table>
 </div>
 
-<!-- ✅ 3 ID SECTIONS -->
+<!-- 3 ID SECTIONS WITH FILE UPLOAD & LAST CHECK -->
 <div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
-    <h3>🆔 Identification Documents <small>(Optional - Add up to 3 IDs)</small></h3>
-    
+    <h3>Identification Documents <small>(Optional - Add up to 3 IDs + Files)</small></h3>
+
     <!-- ID 1 -->
     <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:white;">
-        <h4>📄 ID #1</h4>
+        <h4>ID #1</h4>
         <table style="width:100%;">
             <tr>
                 <td style="width:130px;">Type:</td>
                 <td>
                     <select name="id1_type" style="width:160px;">
                         <option value="">— Select Type —</option>
-                        <option value="passport" {{ 'selected' if client and client.id1_type == 'passport' }}>🛂 Passport</option>
-                        <option value="driver_license" {{ 'selected' if client and client.id1_type == 'driver_license' }}>🚗 Driver License</option>
-                        <option value="insurance_card" {{ 'selected' if client and client.id1_type == 'insurance_card' }}>🏥 Insurance Card</option>
-                        <option value="other" {{ 'selected' if client and client.id1_type == 'other' }}>📋 Other</option>
+                        <option value="passport" {{ 'selected' if client and client.id1_type == 'passport' }}>Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id1_type == 'driver_license' }}>Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id1_type == 'insurance_card' }}>Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id1_type == 'other' }}>Other</option>
                     </select>
                 </td>
                 <td style="width:130px;">Issued By:</td>
@@ -85,22 +85,43 @@
                 <td>Expiry Date:</td>
                 <td><input type="date" name="id1_expiry_date" value="{{ client.id1_expiry_date.strftime('%Y-%m-%d') if client and client.id1_expiry_date else '' }}" style="width:180px;"></td>
             </tr>
+            <tr>
+                <td>Upload File:</td>
+                <td colspan="3">
+                    <input type="file" name="id1_file" accept=".jpg,.jpeg,.png,.pdf" style="width:100%;">
+                    {% if client and client.id1_filename %}
+                        <div style="margin-top:5px; font-size:11px; color:#27ae60;">
+                            Current: <a href="{{ url_for('download_id_file', client_id=client.id, id_num=1) }}" target="_blank">{{ client.id1_filename }}</a>
+                            <small>({{ client.id1_filesize|filesizeformat }})</small>
+                        </div>
+                        {% if client.id1_last_download %}
+                            <div style="margin-top:4px; font-size:10px; color:#27ae60;">
+                                Last checked: {{ client.id1_last_download.strftime('%b %d, %Y %I:%M %p') }}
+                            </div>
+                        {% else %}
+                            <div style="margin-top:4px; font-size:10px; color:#999;">
+                                Never checked
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
         </table>
     </div>
 
     <!-- ID 2 -->
     <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:white;">
-        <h4>📄 ID #2</h4>
+        <h4>ID #2</h4>
         <table style="width:100%;">
             <tr>
                 <td style="width:130px;">Type:</td>
                 <td>
                     <select name="id2_type" style="width:160px;">
                         <option value="">— Select Type —</option>
-                        <option value="passport" {{ 'selected' if client and client.id2_type == 'passport' }}>🛂 Passport</option>
-                        <option value="driver_license" {{ 'selected' if client and client.id2_type == 'driver_license' }}>🚗 Driver License</option>
-                        <option value="insurance_card" {{ 'selected' if client and client.id2_type == 'insurance_card' }}>🏥 Insurance Card</option>
-                        <option value="other" {{ 'selected' if client and client.id2_type == 'other' }}>📋 Other</option>
+                        <option value="passport" {{ 'selected' if client and client.id2_type == 'passport' }}>Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id2_type == 'driver_license' }}>Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id2_type == 'insurance_card' }}>Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id2_type == 'other' }}>Other</option>
                     </select>
                 </td>
                 <td style="width:130px;">Issued By:</td>
@@ -112,22 +133,43 @@
                 <td>Expiry Date:</td>
                 <td><input type="date" name="id2_expiry_date" value="{{ client.id2_expiry_date.strftime('%Y-%m-%d') if client and client.id2_expiry_date else '' }}" style="width:180px;"></td>
             </tr>
+            <tr>
+                <td>Upload File:</td>
+                <td colspan="3">
+                    <input type="file" name="id2_file" accept=".jpg,.jpeg,.png,.pdf" style="width:100%;">
+                    {% if client and client.id2_filename %}
+                        <div style="margin-top:5px; font-size:11px; color:#27ae60;">
+                            Current: <a href="{{ url_for('download_id_file', client_id=client.id, id_num=2) }}" target="_blank">{{ client.id2_filename }}</a>
+                            <small>({{ client.id2_filesize|filesizeformat }})</small>
+                        </div>
+                        {% if client.id2_last_download %}
+                            <div style="margin-top:4px; font-size:10px; color:#27ae60;">
+                                Last checked: {{ client.id2_last_download.strftime('%b %d, %Y %I:%M %p') }}
+                            </div>
+                        {% else %}
+                            <div style="margin-top:4px; font-size:10px; color:#999;">
+                                Never checked
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
         </table>
     </div>
 
     <!-- ID 3 -->
     <div style="border:2px solid #ddd; border-radius:8px; padding:12px; margin-bottom:20px; background:white;">
-        <h4>📄 ID #3</h4>
+        <h4>ID #3</h4>
         <table style="width:100%;">
             <tr>
                 <td style="width:130px;">Type:</td>
                 <td>
                     <select name="id3_type" style="width:160px;">
                         <option value="">— Select Type —</option>
-                        <option value="passport" {{ 'selected' if client and client.id3_type == 'passport' }}>🛂 Passport</option>
-                        <option value="driver_license" {{ 'selected' if client and client.id3_type == 'driver_license' }}>🚗 Driver License</option>
-                        <option value="insurance_card" {{ 'selected' if client and client.id3_type == 'insurance_card' }}>🏥 Insurance Card</option>
-                        <option value="other" {{ 'selected' if client and client.id3_type == 'other' }}>📋 Other</option>
+                        <option value="passport" {{ 'selected' if client and client.id3_type == 'passport' }}>Passport</option>
+                        <option value="driver_license" {{ 'selected' if client and client.id3_type == 'driver_license' }}>Driver License</option>
+                        <option value="insurance_card" {{ 'selected' if client and client.id3_type == 'insurance_card' }}>Insurance Card</option>
+                        <option value="other" {{ 'selected' if client and client.id3_type == 'other' }}>Other</option>
                     </select>
                 </td>
                 <td style="width:130px;">Issued By:</td>
@@ -139,22 +181,43 @@
                 <td>Expiry Date:</td>
                 <td><input type="date" name="id3_expiry_date" value="{{ client.id3_expiry_date.strftime('%Y-%m-%d') if client and client.id3_expiry_date else '' }}" style="width:180px;"></td>
             </tr>
+            <tr>
+                <td>Upload File:</td>
+                <td colspan="3">
+                    <input type="file" name="id3_file" accept=".jpg,.jpeg,.png,.pdf" style="width:100%;">
+                    {% if client and client.id3_filename %}
+                        <div style="margin-top:5px; font-size:11px; color:#27ae60;">
+                            Current: <a href="{{ url_for('download_id_file', client_id=client.id, id_num=3) }}" target="_blank">{{ client.id3_filename }}</a>
+                            <small>({{ client.id3_filesize|filesizeformat }})</small>
+                        </div>
+                        {% if client.id3_last_download %}
+                            <div style="margin-top:4px; font-size:10px; color:#27ae60;">
+                                Last checked: {{ client.id3_last_download.strftime('%b %d, %Y %I:%M %p') }}
+                            </div>
+                        {% else %}
+                            <div style="margin-top:4px; font-size:10px; color:#999;">
+                                Never checked
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
         </table>
     </div>
 </div>
 
 <!-- RISK & NOTES -->
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:30px;">
-    <h3>⚠️ Risk Assessment</h3>
+    <h3>Risk Assessment</h3>
     <table style="width:100%;">
         <tr style="background:#fff3cd;">
             <td style="width:130px;"><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
             <td>
                 <select name="risk_level" required style="width:200px;">
-                    <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>🟢 Low Risk</option>
-                    <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>🟡 Medium Risk</option>
-                    <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>🟠 High Risk</option>
-                    <option value="on hold" {{ 'selected' if client and client.risk_level == 'on hold' }}>🔴 On Hold</option>
+                    <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>Low Risk</option>
+                    <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>Medium Risk</option>
+                    <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>High Risk</option>
+                    <option value="on hold" {{ 'selected' if client and client.risk_level == 'on hold' }}>On Hold</option>
                 </select>
             </td>
             <td style="width:130px;"><strong>Notes:</strong></td>
@@ -166,75 +229,81 @@
     </table>
 </div>
 
-<!-- ✅ FORM ENDS HERE -->
-</form>
-
-<!-- ✅ SUBMIT BUTTON -->
+<!-- SUBMIT BUTTON -->
 <div style="text-align:center; margin-bottom:30px;">
     <button type="submit" form="clientForm" 
             style="width:100%; max-width:400px; padding:18px; background:#27ae60; color:white; border:none; border-radius:8px; font-size:18px; font-weight:bold; cursor:pointer; box-shadow:0 4px 15px rgba(39,174,96,0.3);">
-        {% if client %}💾 UPDATE CLIENT{% else %}👥 ADD NEW CLIENT{% endif %}
+        {% if client %}UPDATE CLIENT{% else %}ADD NEW CLIENT{% endif %}
     </button>
 </div>
+</form>
 
+<!-- CLIENT SUMMARY -->
 {% if client %}
-<!-- ✅ CLIENT SUMMARY -->
 <div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:20px;">
-    <h4>📋 Client Summary</h4>
+    <h4>Client Summary</h4>
     <p><strong>Risk:</strong> 
-        {% if client.risk_level == 'low risk' %}<span style="color:green;">🟢 LOW RISK</span>
-        {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">🟡 MEDIUM RISK</span>
-        {% elif client.risk_level == 'high risk' %}<span style="color:red;">🟠 HIGH RISK</span>
-        {% else %}<span style="color:red; font-weight:bold;">🔴 ON HOLD</span>{% endif %}
+        {% if client.risk_level == 'low risk' %}<span style="color:green;">LOW RISK</span>
+        {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">MEDIUM RISK</span>
+        {% elif client.risk_level == 'high risk' %}<span style="color:red;">HIGH RISK</span>
+        {% else %}<span style="color:red; font-weight:bold;">ON HOLD</span>{% endif %}
     </p>
     <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
-    
-    <!-- ✅ CREATED DATE IN SUMMARY -->
-    <p><strong>📅 Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
-    
-    <!-- ✅ FIXED: NO .all() - client.transactions is already a list -->
+    <p><strong>Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+
     {% set transactions_list = client.transactions %}
     <p><strong>Transactions:</strong> {{ transactions_list|length }} | 
        <strong>Pending:</strong> 
        {% set pending_tx = transactions_list|selectattr('status', 'equalto', 'pending')|list %}
        {% if pending_tx|length > 0 %}
-           <span style="color:red; font-weight:bold;">🚨 {{ pending_tx|length }}</span>
+           <span style="color:red; font-weight:bold;">{{ pending_tx|length }}</span>
        {% else %}
-           <span style="color:green;">✅ 0</span>
+           <span style="color:green;">0</span>
        {% endif %}
     </p>
-    
-    <!-- ✅ SHOW ALL 3 IDs -->
+
     {% if client.id1_number or client.id2_number or client.id3_number %}
     <div style="margin-top:15px;">
-        <strong>🆔 IDs:</strong><br>
+        <strong>IDs:</strong><br>
         {% if client.id1_number %}
-            <small>{{ client.id1_type or 'ID' }} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }} 
-            {% if client.id1_expiry_date %}
-                ({{ client.id1_issued_by or 'Unknown' }} - Exp: {{ client.id1_expiry_date.strftime('%m/%y') }})
-            {% endif %}
+            <small>
+                {{ client.id1_type or 'ID' }} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }}
+                {% if client.id1_filename %}
+                    (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=1) }}">file</a>)
+                {% endif %}
+                {% if client.id1_last_download %}
+                    <span style="color:#27ae60; font-size:9px;">Last checked: {{ client.id1_last_download.strftime('%b %d') }}</span>
+                {% endif %}
             </small><br>
         {% endif %}
         {% if client.id2_number %}
-            <small>{{ client.id2_type or 'ID' }} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }} 
-            {% if client.id2_expiry_date %}
-                ({{ client.id2_issued_by or 'Unknown' }} - Exp: {{ client.id2_expiry_date.strftime('%m/%y') }})
-            {% endif %}
+            <small>
+                {{ client.id2_type or 'ID' }} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }}
+                {% if client.id2_filename %}
+                    (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=2) }}">file</a>)
+                {% endif %}
+                {% if client.id2_last_download %}
+                    <span style="color:#27ae60; font-size:9px;">Last checked: {{ client.id2_last_download.strftime('%b %d') }}</span>
+                {% endif %}
             </small><br>
         {% endif %}
         {% if client.id3_number %}
-            <small>{{ client.id3_type or 'ID' }} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }} 
-            {% if client.id3_expiry_date %}
-                ({{ client.id3_issued_by or 'Unknown' }} - Exp: {{ client.id3_expiry_date.strftime('%m/%y') }})
-            {% endif %}
-            </small>
+            <small>
+                {{ client.id3_type or 'ID' }} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }}
+                {% if client.id3_filename %}
+                    (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=3) }}">file</a>)
+                {% endif %}
+                {% if client.id3_last_download %}
+                    <span style="color:#27ae60; font-size:9px;">Last checked: {{ client.id3_last_download.strftime('%b %d') }}</span>
+                {% endif %}
+            </small><br>
         {% endif %}
     </div>
     {% endif %}
 </div>
 
-<!-- ✅ RECENT TRANSACTIONS -->
-<h3>📊 Recent Transactions ({{ transactions_list|length }})</h3>
+<!-- RECENT TRANSACTIONS -->
+<h3>Recent Transactions ({{ transactions_list|length }})</h3>
 <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">
     <tr style="background:#f2f2f2;">
         <th>ID</th><th>Date</th><th>From</th><th>To</th><th>Rate</th><th>Status</th>
@@ -248,9 +317,9 @@
         <td>{{ "%.4f"|format(tx.exchange_rate) }}</td>
         <td>
             {% if tx.status == 'pending' %}
-                <span style="color:red; font-weight:bold;">⏳ PENDING</span>
+                <span style="color:red; font-weight:bold;">PENDING</span>
             {% else %}
-                <span style="color:green;">✅ CLOSED</span>
+                <span style="color:green;">CLOSED</span>
             {% endif %}
         </td>
     </tr>
@@ -260,11 +329,11 @@
 </table>
 {% endif %}
 
-<!-- ✅ BACK BUTTON -->
+<!-- BACK BUTTON -->
 <div style="text-align:center; margin-top:30px;">
     <a href="{{ url_for('customers') }}" 
        style="font-size:16px; color:#3498db; font-weight:bold; text-decoration:none; padding:12px 24px; border:2px solid #3498db; border-radius:8px; display:inline-block;">
-       👥 Back to Customers
+       Back to Customers
     </a>
 </div>
 {% endblock %}
