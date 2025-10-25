@@ -250,60 +250,105 @@ def index():
         fixed_currency = request.form['fixed_currency']
         fixed_amount = float(request.form['fixed_amount'])
         other_currency = request.form['other_currency']
-        exchange_rate = float(request.form['exchange_rate'])
         notes = request.form.get('notes', '')
         is_fintrac = 'is_fintrac' in request.form
         status = request.form['status']
 
         if fixed_currency == other_currency:
-            flash('❌ Cannot exchange same currency!')
+            flash('Cannot exchange same currency!')
             return redirect(url_for('index'))
+
+        try:
+            rate_to_cad = float(request.form.get('rate_to_cad') or 0)
+            rate_from_cad = float(request.form.get('rate_from_cad') or 0)
+        except (ValueError, TypeError):
+            flash('Invalid rate entered!')
+            return redirect(url_for('index'))
+
+        if rate_to_cad <= 0:
+            flash('Rate is required!')
+            return redirect(url_for('index'))
+
+        if not rate_to_cad:
+            flash('Rate is required!')
+            return redirect(url_for('index'))
+
+        # Determine which rate to use as exchange_rate
+        if fixed_currency == 'CAD' or other_currency == 'CAD':
+            if fixed_currency == 'CAD':
+                exchange_rate = float(rate_to_cad)  # 1 CAD → OTHER
+            else:
+                exchange_rate = float(rate_from_cad or 0)
+                if exchange_rate == 0:
+                    flash('Rate is required!')
+                    return redirect(url_for('index'))
+        else:
+            exchange_rate = float(rate_to_cad)  # 1 fixed → CAD
+            # Optional: store second rate in notes
+            if rate_from_cad:
+                notes = f"{notes} | Rate (1 {other_currency}→CAD): {rate_from_cad}".strip()
 
         tx_id = generate_transaction_id(datetime.utcnow())
 
+        # === CALCULATE FROM/TO AMOUNTS ===
         if mode == 'client_fixed':
             from_currency = fixed_currency
             to_currency = other_currency
             from_amount = fixed_amount
 
             if from_currency == 'CAD':
-                # ✅ CLIENT PAYS CAD: Deduct CAD fee FIRST, then convert remaining
                 remaining_cad = fixed_amount - FLAT_FEE_CAD
                 if remaining_cad <= 0:
-                    flash(f'❌ Amount too small! Need > ${FLAT_FEE_CAD} CAD')
+                    flash(f'Amount too small! Need > ${FLAT_FEE_CAD} CAD')
                     return redirect(url_for('index'))
                 to_amount = remaining_cad / exchange_rate
+            elif to_currency == 'CAD':
+                gross_to_amount = fixed_amount * exchange_rate
+                to_amount = gross_to_amount - FLAT_FEE_CAD
+                if to_amount <= 0:
+                    flash(f'Amount too small after fee!')
+                    return redirect(url_for('index'))
             else:
-                if to_currency == 'CAD':
-                    # ✅ CLIENT PAYS NON-CAD: Convert first, deduct CAD fee from result
-                    gross_to_amount = fixed_amount * exchange_rate
-                    to_amount = gross_to_amount - FLAT_FEE_CAD
-                    if to_amount <= 0:
-                        flash(f'❌ Amount too small after fee! Need > ${FLAT_FEE_CAD} {to_currency}')
-                        return redirect(url_for('index'))
+                gross_to_amount = fixed_amount * rate_to_cad
+                gross_to_amount = gross_to_amount - FLAT_FEE_CAD
+                to_amount = gross_to_amount / rate_from_cad
+                if to_amount <= 0:
+                    flash(f'Amount too small after fee!')
+                    return redirect(url_for('index'))
 
         else:  # bank_fixed
             from_currency = other_currency
             to_currency = fixed_currency
             to_amount = fixed_amount
 
-            if  to_currency== 'CAD':
-                # ✅ CLIENT PAYS CAD: Add CAD fee to payment amount
-                exchange_needed = (fixed_amount + FLAT_FEE_CAD)  / exchange_rate
+            if to_currency == 'CAD':
+                exchange_needed = (fixed_amount + FLAT_FEE_CAD) / exchange_rate
                 from_amount = exchange_needed
-            else:
-                if from_currency == 'CAD':                # ✅ CLIENT PAYS NON-CAD: Add equivalent CAD fee
-                    exchange_needed = fixed_amount * exchange_rate
-                    cad_fee_equiv = FLAT_FEE_CAD# / exchange_rate  # Convert CAD fee to from_currency
-                    from_amount = exchange_needed + cad_fee_equiv
+                if from_amount <= 0:
+                    flash(f'Amount too small after fee!')
+                    return redirect(url_for('index'))
+            elif from_currency == 'CAD':
+                exchange_needed = fixed_amount * exchange_rate
+                from_amount = exchange_needed + FLAT_FEE_CAD
+                if from_amount <= 0:
+                    flash(f'Amount too small after fee!')
+                    return redirect(url_for('index'))
 
-        # After the calculations above
+            else:
+                gross_to_amount = fixed_amount * rate_to_cad
+                gross_to_amount = gross_to_amount - FLAT_FEE_CAD
+                to_amount = gross_to_amount / rate_from_cad
+                if to_amount <= 0:
+                    flash(f'Amount too small after fee!')
+                    return redirect(url_for('index'))
+
+        # === FLASH CONFIRMATION ===
         client_pays = f"{from_amount:,.2f} {from_currency}"
         bank_receives = f"{to_amount:,.2f} {to_currency}"
         fee_in_client_currency = f"{(FLAT_FEE_CAD / exchange_rate):,.2f} {from_currency}" if from_currency != 'CAD' else f"{FLAT_FEE_CAD:,.2f} CAD"
 
         flash(
-            f"✅ Transaction ready!<br>"
+            f"Transaction ready!<br>"
             f"• You pay: <strong>{client_pays}</strong><br>"
             f"• Bank receives: <strong>{bank_receives}</strong><br>"
             f"• Flat fee ({FLAT_FEE_CAD} CAD): {fee_in_client_currency}"
