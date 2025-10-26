@@ -116,14 +116,20 @@ with app.app_context():
 
 # === WKHTMLTOPDF CONFIG (GLOBAL) ===
 
-WKHTMLTOPDF_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
+# === AUTO wkhtmltopdf PATH ===
+if os.name == 'nt':  # Windows
+    WKHTMLTOPDF_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
+    WKHTMLTOIMAGE_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
+else:  # Render (Linux)
+    WKHTMLTOPDF_PATH = '/usr/bin/wkhtmltopdf'
+    WKHTMLTOIMAGE_PATH = '/usr/bin/wkhtmltoimage'
 
+# Validate paths
 if not os.path.exists(WKHTMLTOPDF_PATH):
-    raise FileNotFoundError(f"wkhtmltopdf not found at {WKHTMLTOPDF_PATH}\nInstall from: https://wkhtmltopdf.org")
+    raise FileNotFoundError(f"wkhtmltopdf not found: {WKHTMLTOPDF_PATH}")
 
-# === CONFIG (REUSE wkhtmltopdf path) ===
-config = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
-IMGKIT_CONFIG = imgkit.config(wkhtmltoimage=r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe')
+config_pdf = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
+config_img = imgkit.config(wkhtmltoimage=WKHTMLTOIMAGE_PATH)
 
 # === GLOBALS ===
 FEE_PERCENTAGE = 0.0
@@ -792,8 +798,7 @@ def download_pdf(tx_id):
     profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     html_content = render_template('print_receipt.html',
-                                   tx=tx,
-                                   client=client,
+                                   tx=tx, client=client,
                                    exchange_name=EXCHANGE_NAME,
                                    profit_cad=profit_cad,
                                    flat_fee_cad=FLAT_FEE_CAD,
@@ -801,7 +806,7 @@ def download_pdf(tx_id):
                                    fee_percentage=FEE_PERCENTAGE,
                                    is_download=True)
 
-    pdf = pdfkit.from_string(html_content, False, configuration=config)
+    pdf = pdfkit.from_string(html_content, False, configuration=config_pdf)
 
     return send_file(
         io.BytesIO(pdf),
@@ -821,8 +826,7 @@ def download_png(tx_id):
     profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     html_content = render_template('print_receipt.html',
-                                   tx=tx,
-                                   client=client,
+                                   tx=tx, client=client,
                                    exchange_name=EXCHANGE_NAME,
                                    profit_cad=profit_cad,
                                    flat_fee_cad=FLAT_FEE_CAD,
@@ -830,16 +834,11 @@ def download_png(tx_id):
                                    fee_percentage=FEE_PERCENTAGE,
                                    is_download=True)
 
-    # === DIRECT HTML → PNG ===
     png_data = imgkit.from_string(
         html_content,
         False,
-        config=IMGKIT_CONFIG,
-        options={
-            'format': 'png',
-            'width': 300,
-            'quiet': ''
-        }
+        config=config_img,
+        options={'format': 'png', 'width': 300}
     )
 
     return send_file(
