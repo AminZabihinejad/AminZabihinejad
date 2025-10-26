@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Edit Transaction{% endblock %}
 {% block content %}
-<h2>✏️ Edit Transaction #{{ tx.id }}</h2>
+<h2>✏️ Edit Transaction #{{ tx.tx_ref }}</h2>
 <div style="background:#fff3cd; padding:15px; border-radius:8px;">
     <p><strong>Client:</strong> {{ tx.client.first_name }} {{ tx.client.last_name }}</p>
 </div>
