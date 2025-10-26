@@ -1,30 +1,62 @@
 {% extends "base.html" %}
-{% block title %}Profile - Piggy Bank{% endblock %}
+{% block title %}{{ exchange_name }} - Profile{% endblock %}
 {% block content %}
-<h2>👤 {{ user.username }} Profile</h2>
+
+<h2>Profile & Settings</h2>
+
+<!-- EXCHANGE NAME (EDITABLE) -->
+<div style="background:#e8f4fd; padding:20px; border-radius:8px; margin-bottom:20px; text-align:center;">
+    <h3 style="margin:0 0 10px 0;">Exchange Name</h3>
+    <form method="POST" action="{{ url_for('edit_exchange_name') }}" style="display:inline;">
+        <input type="text" name="exchange_name" value="{{ exchange_name }}" 
+               style="font-size:18px; padding:8px; width:300px; text-align:center; border:1px solid #3498db; border-radius:4px;"
+               {% if not user.is_admin %}disabled{% endif %}>
+        {% if user.is_admin %}
+        <button type="submit" style="padding:8px 16px; background:#3498db; color:white; border:none; border-radius:4px; margin-left:10px;">Save</button>
+        {% endif %}
+    </form>
+</div>
+
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <!-- USER INFO -->
     <div style="background:#f9f9f9; padding:20px; border-radius:8px;">
         <h3>Account Information</h3>
         <p><strong>Username:</strong> {{ user.username }}</p>
-        <p><strong>Role:</strong> {% if user.is_admin %}🔑 Admin{% else %}👤 User{% endif %}</p>
+        <p><strong>Role:</strong> {% if user.is_admin %}Admin{% else %}User{% endif %}</p>
         <p><strong>Member Since:</strong> {{ user.created_at.strftime('%Y-%m-%d') }}</p>
         <p><strong>Total Transactions:</strong> {{ total_transactions }}</p>
+        <p><strong>Total Clients:</strong> {{ total_clients }}</p>
+    </div>
+
+    <!-- USER PACKAGE -->
+    <div style="background:#e8f7ff; padding:20px; border-radius:8px;">
+        <h3>5-User Package</h3>
+        <p><strong>Users Used:</strong> {{ total_users }} / {{ max_users }}</p>
+        <div style="background:#d5f4e6; padding:10px; border-radius:6px; margin-top:10px; font-size:14px;">
+            {% for u in users %}
+            <div style="margin:5px 0; padding:5px; background:white; border-radius:4px;">
+                <strong>{{ u.username }}</strong> 
+                {% if u.is_admin %}<span style="color:#27ae60; font-size:12px;">(Admin)</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
         {% if user.is_admin %}
-            <p><strong>Total Users:</strong> {{ total_users }}</p>
+        <a href="{{ url_for('manage_users') }}" style="display:block; margin-top:15px; text-align:center; background:#2196f3; color:white; padding:8px; border-radius:4px; text-decoration:none;">Manage Users</a>
         {% endif %}
     </div>
-    <div style="background:#e8f4fd; padding:20px; border-radius:8px;">
-        <h3>💎 Upgrade Plans</h3>
-        <table style="width:100%; border-collapse:collapse;">
-            <tr style="background:#3498db; color:white;"><th>Plan</th><th>Price</th><th>Users</th></tr>
-            <tr><td><strong>Solo</strong></td><td>$9.99/mo</td><td>1</td></tr>
-            <tr><td><strong>Team</strong></td><td>$29/mo</td><td>5</td></tr>
-            <tr style="background:#27ae60; color:white;"><td><strong>Admin</strong></td><td>FREE</td><td>ALL</td></tr>
-        </table>
-    </div>
 </div>
-<div style="margin-top:20px; text-align:center;">
-    <a href="{{ url_for('index') }}" style="margin-right:10px; font-size:16px;">🏠 Overview</a>
-    <a href="{{ url_for('logout') }}" style="background:#e74c3c; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-size:16px;">🚪 LOGOUT</a>
+
+<!-- FEE DISPLAY -->
+<div style="margin-top:20px; background:#fff3cd; padding:15px; border-radius:8px; text-align:center;">
+    <strong>Current Fees:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD 
+    | <strong>Per $200 CAD:</strong> ${{ "%.2f"|format((200 * (current_fee / 100)) + current_flat_fee) }}
 </div>
+
+<!-- NAVIGATION -->
+<div style="margin-top:30px; text-align:center;">
+    <a href="{{ url_for('index') }}" style="margin-right:10px; font-size:16px;">Overview</a>
+    <a href="{{ url_for('transactions') }}" style="margin-right:10px; font-size:16px;">Transactions</a>
+    <a href="{{ url_for('logout') }}" style="background:#e74c3c; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-size:16px;">LOGOUT</a>
+</div>
+
 {% endblock %}

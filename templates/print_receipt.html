@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Receipt {{ tx.tx_ref }}</title>
+    <style>
+        @page { margin: 0; size: 80mm auto; }
+        body { font-family: 'Courier New', monospace; font-size: 10pt; margin: 0; padding: 5mm; width: 70mm; }
+        .receipt { width: 100%; }
+        .header { text-align: center; margin-bottom: 8mm; }
+        .header h1 { font-size: 14pt; margin: 0; font-weight: bold; }
+        .header p { margin: 2mm 0; font-size: 9pt; }
+        .divider { border-top: 1px dashed #000; margin: 5mm 0; }
+        .section { margin: 5mm 0; }
+        .label { font-weight: bold; display: inline-block; width: 22mm; }
+        .value { display: inline-block; }
+        .total { font-weight: bold; font-size: 11pt; }
+        .footer { text-align: center; margin-top: 10mm; font-size: 8pt; }
+        .actions { text-align: center; margin: 15mm 0; }
+        .btn { padding: 8px 16px; margin: 0 5px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-print Attack { background: #27ae60; color: white; }
+        .btn-pdf { background: #2196f3; color: white; }
+        .btn-jpg { background: #f39c12; color: white; }
+        @media print {
+            .actions { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="receipt">
+
+    <!-- HEADER -->
+    <div class="header">
+        <h1>{{ exchange_name }}</h1>
+        <p>{{ tx.date.strftime('%Y-%m-%d %H:%M') }}</p>
+        <p>Receipt #: {{ tx.tx_ref }}</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- CLIENT INFO -->
+    <div class="section">
+        <div><span class="label">Client:</span> <span class="value">{{ client.first_name }} {{ client.last_name }}</span></div>
+        <div><span class="label">Phone:</span> <span class="value">{{ client.phone }}</span></div>
+        <div><span class="label">Address:</span> <span class="value">{{ client.civic_number }} {{ client.street }}, {{ client.city }}</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- TRANSACTION -->
+    <div class="section">
+        <div><span class="label">From:</span> <span class="value">{{ "%.2f"|format(tx.from_amount) }} {{ tx.from_currency }}</span></div>
+        <div><span class="label">To:</span> <span class="value">{{ "%.2f"|format(tx.to_amount) }} {{ tx.to_currency }}</span></div>
+        <div><span class="label">Rate:</span> <span class="value">1 {{ tx.from_currency }} = {{ "%.4f"|format(tx.exchange_rate) }} {{ tx.to_currency }}</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- FEE -->
+    <div class="section">
+        <div><span class="label">Flat Fee:</span> <span class="value">${{ "%.2f"|format(flat_fee_cad) }} CAD</span></div>
+        <div><span class="label">Rate Fee:</span> <span class="value">{{ current_fee }}% = ${{ "%.2f"|format(tx.from_amount * fee_percentage) }}</span></div>
+        <div class="total"><span class="label">Total Fee:</span> <span class="value">${{ "%.2f"|format(profit_cad) }} CAD</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="footer">
+        <p>Thank you for your business!</p>
+        <p>Powered by MoneyExchange Pro</p>
+    </div>
+
+</div>
+
+<!-- ACTION BUTTONS -->
+{% if not is_download %}
+<div class="actions">
+    <button onclick="window.print()" class="btn btn-print">Print</button>
+    <a href="{{ url_for('download_pdf', tx_id=tx.id) }}" class="btn btn-pdf">PDF</a>
+    <a href="{{ url_for('download_png', tx_id=tx.id) }}" class="btn btn-png">PNG</a>
+</div>
+{% endif %}
+
+</body>
+</html>

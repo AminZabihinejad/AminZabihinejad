@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +12,14 @@ import os
 import uuid
 from math import ceil
 import sqlalchemy as sa
+import pdfkit
+import io
+import os
+import imgkit
+
+# === EXCHANGE NAME (GLOBAL) ===
+EXCHANGE_NAME = "MoneyExchange Pro"
+MAX_USERS = 5  # 5-user package
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'piggybank2025'
@@ -103,6 +111,19 @@ with app.app_context():
         admin = User(username='admin', password='admin123', is_admin=True)
         db.session.add(admin)
         db.session.commit()
+
+
+
+# === WKHTMLTOPDF CONFIG (GLOBAL) ===
+
+WKHTMLTOPDF_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
+
+if not os.path.exists(WKHTMLTOPDF_PATH):
+    raise FileNotFoundError(f"wkhtmltopdf not found at {WKHTMLTOPDF_PATH}\nInstall from: https://wkhtmltopdf.org")
+
+# === CONFIG (REUSE wkhtmltopdf path) ===
+config = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
+IMGKIT_CONFIG = imgkit.config(wkhtmltoimage=r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe')
 
 # === GLOBALS ===
 FEE_PERCENTAGE = 0.0
@@ -343,13 +364,77 @@ def index():
 
 @app.route('/profile')
 def profile():
-    if 'user_id' not in session: return redirect(url_for('login'))
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     current_user = User.query.get(session['user_id'])
-    return render_template('profile.html', user=current_user,
-                           total_transactions=Transaction.query.count(),
-                           total_clients=Client.query.count(),
-                           current_fee=round(FEE_PERCENTAGE*100, 1),
-                           current_flat_fee=round(FLAT_FEE_CAD, 2))
+    total_transactions = Transaction.query.count()
+    total_clients = Client.query.count()
+    total_users = User.query.count()
+
+    # Admin sees all users
+    users = User.query.all() if current_user.is_admin else []
+
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
+
+    return render_template('profile.html',
+                           user=current_user,
+                           total_transactions=total_transactions,
+                           total_clients=total_clients,
+                           total_users=total_users,
+                           users=users,
+                           exchange_name=EXCHANGE_NAME,
+                           max_users=MAX_USERS,
+                           current_fee=current_fee,
+                           current_flat_fee=current_flat_fee)
+
+@app.route('/manage_users', methods=['GET', 'POST'])
+def manage_users():
+    if 'user_id' not in session or not session.get('is_admin'):
+        flash('Admin access only!')
+        return redirect(url_for('profile'))
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if action == 'add':
+            if User.query.filter_by(username=username).first():
+                flash(f'User {username} already exists!')
+            elif User.query.count() >= MAX_USERS:
+                flash(f'Cannot add more than {MAX_USERS} users!')
+            else:
+                new_user = User(username=username, password=password, is_admin=False)
+                db.session.add(new_user)
+                db.session.commit()
+                flash(f'User {username} added!')
+        elif action == 'delete':
+            user = User.query.filter_by(username=username).first()
+            if user and not user.is_admin:
+                db.session.delete(user)
+                db.session.commit()
+                flash(f'User {username} deleted!')
+            else:
+                flash('Cannot delete admin or user not found!')
+
+    users = User.query.all()
+    return render_template('manage_users.html', users=users, max_users=MAX_USERS, exchange_name=EXCHANGE_NAME)
+
+@app.route('/edit_exchange_name', methods=['POST'])
+def edit_exchange_name():
+    if 'user_id' not in session or not session.get('is_admin'):
+        return redirect(url_for('login'))
+
+    global EXCHANGE_NAME
+    new_name = request.form['exchange_name'].strip()
+    if new_name:
+        EXCHANGE_NAME = new_name
+        flash(f'Exchange name updated to: {EXCHANGE_NAME}')
+    else:
+        flash('Name cannot be empty!')
+    return redirect(url_for('profile'))
 
 @app.route('/customers')
 def customers():
@@ -670,6 +755,100 @@ def set_fees():
     FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
     flash(f'Fees: {FEE_PERCENTAGE*100}% + ${FLAT_FEE_CAD} CAD!')
     return redirect(url_for('transactions'))
+
+
+
+@app.route('/print_receipt/<int:tx_id>')
+def print_receipt(tx_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+
+    # === CALCULATE PROFIT & FEES ===
+    flat_fee_in_tx_currency = FLAT_FEE_CAD
+    if tx.from_currency != 'CAD':
+        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
+    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+
+    return render_template('print_receipt.html',
+                           tx=tx,
+                           client=client,
+                           exchange_name=EXCHANGE_NAME,
+                           profit_cad=profit_cad,
+                           flat_fee_cad=FLAT_FEE_CAD,
+                           current_fee=round(FEE_PERCENTAGE * 100, 1),
+                           fee_percentage=FEE_PERCENTAGE)
+
+@app.route('/download_pdf/<int:tx_id>')
+def download_pdf(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+
+    flat_fee_in_tx_currency = FLAT_FEE_CAD
+    if tx.from_currency != 'CAD':
+        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
+    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+
+    html_content = render_template('print_receipt.html',
+                                   tx=tx,
+                                   client=client,
+                                   exchange_name=EXCHANGE_NAME,
+                                   profit_cad=profit_cad,
+                                   flat_fee_cad=FLAT_FEE_CAD,
+                                   current_fee=round(FEE_PERCENTAGE * 100, 1),
+                                   fee_percentage=FEE_PERCENTAGE,
+                                   is_download=True)
+
+    pdf = pdfkit.from_string(html_content, False, configuration=config)
+
+    return send_file(
+        io.BytesIO(pdf),
+        as_attachment=True,
+        download_name=f"Receipt_{tx.tx_ref}.pdf",
+        mimetype='application/pdf'
+    )
+
+@app.route('/download_png/<int:tx_id>')
+def download_png(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+
+    flat_fee_in_tx_currency = FLAT_FEE_CAD
+    if tx.from_currency != 'CAD':
+        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
+    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+
+    html_content = render_template('print_receipt.html',
+                                   tx=tx,
+                                   client=client,
+                                   exchange_name=EXCHANGE_NAME,
+                                   profit_cad=profit_cad,
+                                   flat_fee_cad=FLAT_FEE_CAD,
+                                   current_fee=round(FEE_PERCENTAGE * 100, 1),
+                                   fee_percentage=FEE_PERCENTAGE,
+                                   is_download=True)
+
+    # === DIRECT HTML → PNG ===
+    png_data = imgkit.from_string(
+        html_content,
+        False,
+        config=IMGKIT_CONFIG,
+        options={
+            'format': 'png',
+            'width': 300,
+            'quiet': ''
+        }
+    )
+
+    return send_file(
+        io.BytesIO(png_data),
+        as_attachment=True,
+        download_name=f"Receipt_{tx.tx_ref}.png",
+        mimetype='image/png'
+    )
+
 
 if __name__ == '__main__':
     app.run(debug=True)
