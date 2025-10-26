@@ -294,6 +294,12 @@ def index():
                 gross -= FLAT_FEE_CAD
                 to_amount = gross / rate_to_cad
 
+        # Calculate profit in CAD
+        profit_cad = FLAT_FEE_CAD
+        profit_cad += from_amount * FEE_PERCENTAGE
+        profit_cad = round(profit_cad, 2)
+
+
         new_tx = Transaction(
             tx_ref=tx_ref,
             from_currency=from_currency,
@@ -301,7 +307,7 @@ def index():
             from_amount=from_amount,
             to_amount=to_amount,
             exchange_rate=exchange_rate,
-            notes=f"{notes} (Fee: ${FLAT_FEE_CAD} CAD)",
+            notes = f"{notes} (Profit: ${profit_cad} CAD)" if notes else f"Profit: ${profit_cad} CAD",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status
@@ -594,26 +600,61 @@ def deposit():
 
 @app.route('/reports')
 def reports():
-    if 'user_id' not in session: return redirect(url_for('login'))
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     transactions = Transaction.query.filter_by(status='closed').all()
-    daily_profit = {}; week_total = 0; month_total = 0
-    now = datetime.utcnow(); week_ago = now - timedelta(days=7); month_ago = now - timedelta(days=30)
+
+    daily_profit = {}
+    week_total = 0
+    month_total = 0
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    today_str = now.strftime('%Y-%m-%d')
+
+    import re
+    profit_pattern = re.compile(r'Profit:\s*\$(?P<profit>[\d.]+)\s*CAD', re.IGNORECASE)
 
     for tx in transactions:
         date_str = tx.date.strftime('%Y-%m-%d')
-        profit = abs(tx.to_amount - (tx.from_amount * tx.exchange_rate))
+
+        # Extract profit from notes
+        profit = 0.0
+        if tx.notes:
+            match = profit_pattern.search(tx.notes)
+            if match:
+                try:
+                    profit = float(match.group('profit'))
+                except:
+                    profit = 0.0
+
+        volume = round((tx.from_amount + tx.to_amount) / 2, 2)
+
         if date_str not in daily_profit:
             daily_profit[date_str] = {'count': 0, 'volume': 0, 'profit': 0}
+
         daily_profit[date_str]['count'] += 1
-        daily_profit[date_str]['volume'] += (tx.from_amount + tx.to_amount) / 2
+        daily_profit[date_str]['volume'] += volume
         daily_profit[date_str]['profit'] += profit
-        if tx.date >= week_ago: week_total += profit
-        if tx.date >= month_ago: month_total += profit
+
+        if tx.date >= week_ago:
+            week_total += profit
+        if tx.date >= month_ago:
+            month_total += profit
 
     sorted_daily = dict(sorted(daily_profit.items(), key=lambda x: x[0], reverse=True))
-    return render_template('reports.html', daily_profit=sorted_daily, today=now.strftime('%Y-%m-%d'),
-                           week_total=week_total, month_total=month_total,
-                           current_fee=round(FEE_PERCENTAGE*100, 1), current_flat_fee=round(FLAT_FEE_CAD, 2))
+
+    current_fee = round(FEE_PERCENTAGE * 100, 1)
+    current_flat_fee = round(FLAT_FEE_CAD, 2)
+
+    return render_template('reports.html',
+                           daily_profit=sorted_daily,
+                           today=today_str,
+                           week_total=round(week_total, 2),
+                           month_total=round(month_total, 2),
+                           current_fee=current_fee,
+                           current_flat_fee=current_flat_fee)
 
 @app.route('/download_receipt/<int:tx_id>')
 def download_receipt(tx_id):
