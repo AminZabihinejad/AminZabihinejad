@@ -135,7 +135,7 @@
                     </td>
                     <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
                     <td>
-                        <a href="{{ url_for('edit_transaction', tx_id=tx.tx_ref) }}" style="background:#f39c12; color:white; padding:5px 8px;">EDIT</a>
+                        <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px;">EDIT</a>
                         <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
    onclick="return confirm('Delete transaction {{ tx.tx_ref }}?')">
    Delete

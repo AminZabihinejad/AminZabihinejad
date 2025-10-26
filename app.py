@@ -413,7 +413,7 @@ def download_id_file(client_id, id_num):
     db.session.commit()
     return send_from_directory(app.config['ID_UPLOAD_FOLDER'], filename, as_attachment=True)
 
-@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
+@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])  # ← ADD <int:>
 def edit_transaction(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     if request.method == 'POST':
@@ -421,7 +421,7 @@ def edit_transaction(tx_id):
         tx.to_amount = tx.from_amount * float(request.form['exchange_rate'])
         tx.exchange_rate = float(request.form['exchange_rate'])
         tx.notes = request.form.get('notes')
-        tx.is_fintrac = 'is_fintrac' in request.form
+        tx.is_fintrac = request.form.get('is_fintrac', False) == 'on'
         db.session.commit()
         flash(f'Transaction #{tx.tx_ref} updated!')
         return redirect(url_for('transactions'))
