@@ -103,6 +103,9 @@ class Transaction(db.Model):
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
+    is_deposit = db.Column(db.Boolean, default=False)
+    # NEW FIELD
+    total_fee_cad = db.Column(db.Float, default=0.0)  # ← PROFIT PER TX
 
 # === DATABASE INIT ===
 with app.app_context():
@@ -325,7 +328,7 @@ def index():
         profit_cad = FLAT_FEE_CAD
         profit_cad += from_amount * FEE_PERCENTAGE
         profit_cad = round(profit_cad, 2)
-
+        total_fee = profit_cad
 
         new_tx = Transaction(
             tx_ref=tx_ref,
@@ -337,7 +340,8 @@ def index():
             notes = f"{notes} (Profit: ${profit_cad} CAD)" if notes else f"Profit: ${profit_cad} CAD",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
-            status=status
+            status=status,
+            total_fee_cad = total_fee  # ← SAVE IT
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -680,7 +684,10 @@ def deposit():
             tx_ref=tx_ref, from_currency=currency, to_currency=currency,
             from_amount=0, to_amount=amount, exchange_rate=1.0, notes=notes,
             is_fintrac=(amount >= 10000), client_id=session['selected_client_id'],
-            status=request.form.get('status', 'closed')
+            status=request.form.get('status', 'closed'),
+            is_deposit=True,
+            total_fee_cad=0.0
+
         )
         db.session.add(new_tx); db.session.commit()
         flash(f'Deposited ${amount} {currency}!')

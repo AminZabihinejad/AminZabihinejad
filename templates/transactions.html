@@ -13,9 +13,7 @@
             <input type="submit" value="SET FEES" style="padding:8px 15px; background:#27ae60; color:white; border:none;">
         </form>
         <p style="margin:5px 0; font-weight:bold;">
-            <strong>Current:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD | 
-            <strong>Profit per $200:</strong> ${{ "%.2f"|format((200 * current_fee / 100) + current_flat_fee) }}
-        </p>
+    <strong>Current:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD</p>
     </div>
     {% endif %}
 
@@ -214,7 +212,7 @@
             <em>
                 Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
                 <span style="color:#27ae60;">
-                    Total Profit: ${{ "%.2f"|format((transactions|sum(attribute='from_amount') * current_fee / 100) + (transactions|length * current_flat_fee)) }}
+                    Total Profit: ${{ "%.2f"|format(transactions|sum(attribute='total_fee_cad')) }}
                     ({{ transactions|length }} exchanges on this page)
                 </span>
             </em>
