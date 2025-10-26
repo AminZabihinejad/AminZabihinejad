@@ -687,7 +687,7 @@ def deposit():
         return redirect(url_for('deposit'))
     total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(client_id=session['selected_client_id']).scalar() or 0
     return render_template('deposit.html', total_deposits=total_deposits, client=client,
-                           current_fee=round(FEE_PERCENTAGE*100, 1), current_flat_fee=round(FLAT_FEE_CAD, 2))
+                           current_fee=0, current_flat_fee=0)
 
 @app.route('/reports')
 def reports():
@@ -774,8 +774,7 @@ def print_receipt(tx_id):
 
     # === CALCULATE PROFIT & FEES ===
     flat_fee_in_tx_currency = FLAT_FEE_CAD
-    if tx.from_currency != 'CAD':
-        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
+
     profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     return render_template('print_receipt.html',
