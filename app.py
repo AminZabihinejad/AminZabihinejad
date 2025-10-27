@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta, time
@@ -22,10 +23,17 @@ EXCHANGE_NAME = "MoneyExchange Pro"
 MAX_USERS = 5  # 5-user package
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'piggybank2025'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///moneyexchange.db'
 db = SQLAlchemy(app)
+
+# FLASK-LOGIN SETUP
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# ATTACH TO APP (THIS WAS MISSING)
+app.login_manager = login_manager
 
 # === UPLOAD CONFIG ===
 UPLOAD_FOLDER = 'uploads'
@@ -40,7 +48,7 @@ app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
 # === MODELS ===
-class User(db.Model):
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
@@ -104,8 +112,9 @@ class Transaction(db.Model):
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
     is_deposit = db.Column(db.Boolean, default=False)
-    # NEW FIELD
     total_fee_cad = db.Column(db.Float, default=0.0)  # ← PROFIT PER TX
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user = db.relationship('User', backref='transactions')
 
 # === DATABASE INIT ===
 with app.app_context():
@@ -240,6 +249,7 @@ def filesizeformat(value):
 app.jinja_env.filters['filesizeformat'] = filesizeformat
 
 # === ROUTES ===
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -247,7 +257,7 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         if user and user.password == password:
-            session['user_id'] = user.id
+            login_user(user)
             session['is_admin'] = user.is_admin
             flash('Login successful!')
             return redirect(url_for('index'))
@@ -256,10 +266,19 @@ def login():
 
 @app.route('/logout')
 def logout():
+    logout_user()
     session.clear()
+    flash('Logged out!')
     return redirect(url_for('login'))
 
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     global FEE_PERCENTAGE, FLAT_FEE_CAD
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -341,7 +360,8 @@ def index():
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status,
-            total_fee_cad = total_fee  # ← SAVE IT
+            total_fee_cad = total_fee,  # ← SAVE IT
+            user_id = current_user.id  # ← AUTO-SAVE WHO DID IT
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -523,6 +543,7 @@ def edit_transaction(tx_id):
     return render_template('edit_transaction.html', tx=tx)
 
 @app.route('/transactions')
+@login_required
 def transactions():
     if 'user_id' not in session: return redirect(url_for('login'))
     page = int(request.args.get('page', 1)); per_page = 10
@@ -672,6 +693,7 @@ def export_csv():
                               headers={'Content-Disposition': f'attachment;filename=transactions.csv'})
 
 @app.route('/deposit', methods=['GET', 'POST'])
+@login_required
 def deposit():
     if 'user_id' not in session or not session.get('selected_client_id'):
         flash('SELECT A CLIENT FIRST!'); return redirect(url_for('index'))
@@ -698,7 +720,7 @@ def deposit():
 
 @app.route('/reports')
 def reports():
-    if 'user_id' not in session:
+    if not current_user.is_authenticated:
         return redirect(url_for('login'))
 
     transactions = Transaction.query.filter_by(status='closed').all()
