@@ -252,23 +252,29 @@ app.jinja_env.filters['filesizeformat'] = filesizeformat
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username).first()
-        if user and user.password == password:
-            login_user(user)
-            session['is_admin'] = user.is_admin
-            flash('Login successful!')
-            return redirect(url_for('index'))
-        flash('Invalid credentials!')
-    return render_template('login.html')
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
 
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.password == password:
+            login_user(user, remember=True)
+            session['user_id'] = user.id
+            session['is_admin'] = user.is_admin
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+
+        flash('Invalid username or password.', 'danger')
+
+    return render_template('login.html')
 @app.route('/logout')
+@login_required
 def logout():
     logout_user()
-    session.clear()
-    flash('Logged out!')
+    flash('Logged out successfully!', 'success')
     return redirect(url_for('login'))
 
 
@@ -281,7 +287,7 @@ def load_user(user_id):
 @login_required
 def index():
     global FEE_PERCENTAGE, FLAT_FEE_CAD
-    if 'user_id' not in session: return redirect(url_for('login'))
+
 
     if request.method == 'POST' and 'update_fees' in request.form:
         FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
@@ -468,7 +474,6 @@ def edit_exchange_name():
 
 @app.route('/customers')
 def customers():
-    if 'user_id' not in session: return redirect(url_for('login'))
     return render_template('customers.html', clients_data=calculate_clients_data(), now=datetime.utcnow().date())
 
 @app.route('/select_customer/<int:client_id>')
@@ -481,7 +486,6 @@ def select_customer(client_id):
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
     client = None if client_id == 'new' else Client.query.get_or_404(int(client_id))
     if request.method == 'POST':
         if not client: client = Client()
@@ -520,7 +524,7 @@ def edit_client(client_id):
 
 @app.route('/download_id/<int:client_id>/<int:id_num>')
 def download_id_file(client_id, id_num):
-    if 'user_id' not in session: return redirect(url_for('login'))
+
     client = Client.query.get_or_404(client_id)
     filename = getattr(client, f'id{id_num}_filename')
     if not filename: flash('File not found!'); return redirect(url_for('edit_client', client_id=client_id))
@@ -545,7 +549,7 @@ def edit_transaction(tx_id):
 @app.route('/transactions')
 @login_required
 def transactions():
-    if 'user_id' not in session: return redirect(url_for('login'))
+
     page = int(request.args.get('page', 1)); per_page = 10
     from_date = request.args.get('from_date', ''); to_date = request.args.get('to_date', '')
     search_client = request.args.get('client_name', ''); search_from = request.args.get('from_currency', '').upper()
@@ -591,7 +595,7 @@ def transactions():
 
 @app.route('/update_status/<int:tx_id>', methods=['POST'])
 def update_status(tx_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
+
     tx = Transaction.query.get_or_404(tx_id)
     tx.status = request.form['status']
     db.session.commit()
@@ -614,7 +618,7 @@ def delete_transaction(tx_id):
 
 @app.route('/charts')
 def charts():
-    if 'user_id' not in session: return redirect(url_for('login'))
+
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     client_id = session.get('selected_client_id')
     query = Transaction.query.filter(Transaction.date >= thirty_days_ago)
@@ -653,7 +657,7 @@ def get_live_rate(from_curr, to_curr):
 
 @app.route('/export')
 def export_csv():
-    if 'user_id' not in session: return redirect(url_for('login'))
+
     query = Transaction.query.order_by(Transaction.date.desc())
     all_tx = query.all() if session.get('is_admin') else \
              query.filter_by(client_id=session.get('selected_client_id')).all() if session.get('selected_client_id') else []
