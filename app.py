@@ -47,13 +47,24 @@ app.config['RECEIPT_FOLDER'] = RECEIPT_FOLDER
 app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
+
+class Tenant(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)  # e.g., "ExchangeA"
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships (optional for now)
+    users = db.relationship('User', backref='tenant', lazy=True)
+
 # === MODELS ===
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_super_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -94,8 +105,9 @@ class Client(db.Model):
     id3_filename = db.Column(db.String(255))
     id3_filesize = db.Column(db.Integer)
     id3_last_download = db.Column(db.DateTime)
-
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
+
 
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # AUTO
@@ -114,13 +126,39 @@ class Transaction(db.Model):
     is_deposit = db.Column(db.Boolean, default=False)
     total_fee_cad = db.Column(db.Float, default=0.0)  # ← PROFIT PER TX
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
 
 # === DATABASE INIT ===
+# === DATABASE INIT ===
 with app.app_context():
     db.create_all()
+
+    # ---- ONE-TIME COLUMN FIX (remove after first run) ----
+    import sqlalchemy as sa
+    from sqlalchemy import inspect
+    inspector = inspect(db.engine)
+    if 'is_super_admin' not in [c['name'] for c in inspector.get_columns('user')]:
+        with db.engine.connect() as conn:
+            conn.execute(sa.text('ALTER TABLE user ADD COLUMN is_super_admin BOOLEAN'))
+            conn.execute(sa.text('UPDATE user SET is_super_admin = 0'))
+            conn.commit()
+    # -----------------------------------------------------
+
+    if not Tenant.query.filter_by(name='DefaultTenant').first():
+        default_tenant = Tenant(name='DefaultTenant')
+        db.session.add(default_tenant)
+        db.session.commit()
+
     if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin', password='admin123', is_admin=True)
+        admin_tenant = Tenant.query.filter_by(name='DefaultTenant').first()
+        admin = User(
+            username='admin',
+            password='admin123',
+            is_admin=True,
+            is_super_admin=True,          # ← now the column exists
+            tenant_id=admin_tenant.id
+        )
         db.session.add(admin)
         db.session.commit()
 
@@ -180,7 +218,7 @@ def calculate_clients_data():
     query = Client.query.order_by(Client.created_at.desc())
 
     if search:
-        query = query.filter(or_(Client.first_name.ilike(f'%{search}%'), Client.last_name.ilike(f'%{search}%'), Client.phone.ilike(f'%{search}%')))
+        query = Client.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Client.created_at.desc())
     if risk_level:
         query = query.filter(Client.risk_level == risk_level)
 
@@ -229,7 +267,8 @@ def get_balances():
         transactions = Transaction.query.all()
     else:
         if not client_id: return {}
-        transactions = Transaction.query.filter_by(client_id=client_id).all()
+        transactions = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).all()
+        # For admin without selected client, add tenant filter if neededindex
 
     balances = {}
     for tx in transactions:
@@ -264,6 +303,7 @@ def login():
             login_user(user, remember=True)
             session['user_id'] = user.id
             session['is_admin'] = user.is_admin
+            session['tenant_id'] = user.tenant_id  # ← NEW: Store tenant_id
             flash('Login successful!', 'success')
             return redirect(url_for('index'))
 
@@ -274,9 +314,29 @@ def login():
 @login_required
 def logout():
     logout_user()
+    session.pop('tenant_id', None)  # ← NEW: Clear tenant_id
     flash('Logged out successfully!', 'success')
     return redirect(url_for('login'))
 
+@app.route('/manage_tenants', methods=['GET', 'POST'])
+@login_required
+def manage_tenants():
+    if not current_user.is_super_admin:
+        flash('Super admin access only!')
+        return redirect(url_for('profile'))
+    if request.method == 'POST':
+        action = request.form.get('action')
+        name = request.form.get('name')
+        if action == 'add':
+            if Tenant.query.filter_by(name=name).first():
+                flash('Tenant exists!')
+            else:
+                new_tenant = Tenant(name=name)
+                db.session.add(new_tenant)
+                db.session.commit()
+                flash('Tenant added!')
+    tenants = Tenant.query.all()
+    return render_template('manage_tenants.html', tenants=tenants)  # Create this template
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -367,7 +427,8 @@ def index():
             client_id=session['selected_client_id'],
             status=status,
             total_fee_cad = total_fee,  # ← SAVE IT
-            user_id = current_user.id  # ← AUTO-SAVE WHO DID IT
+            user_id = current_user.id,  # ← AUTO-SAVE WHO DID IT
+            tenant_id=session.get('tenant_id')
         )
         db.session.add(new_tx)
         db.session.commit()
@@ -388,7 +449,7 @@ def index():
         total_volume_usd = round(total_volume_usd, 2)
 
     balances = get_balances()
-    open_transactions = Transaction.query.filter_by(status='pending').all()
+    open_transactions = Transaction.query.filter_by(status='pending', tenant_id=session.get('tenant_id')).all()
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
 
@@ -404,12 +465,10 @@ def profile():
         return redirect(url_for('login'))
 
     current_user = User.query.get(session['user_id'])
-    total_transactions = Transaction.query.count()
-    total_clients = Client.query.count()
-    total_users = User.query.count()
-
-    # Admin sees all users
-    users = User.query.all() if current_user.is_admin else []
+    total_transactions = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).count()
+    total_clients = Client.query.filter_by(tenant_id=session.get('tenant_id')).count()
+    total_users = User.query.filter_by(tenant_id=session.get('tenant_id')).count()
+    users = User.query.filter_by(tenant_id=session.get('tenant_id')).all() if current_user.is_admin else []
 
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
@@ -425,10 +484,24 @@ def profile():
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee)
 
+
 @app.route('/manage_users', methods=['GET', 'POST'])
+@login_required
 def manage_users():
-    if 'user_id' not in session or not session.get('is_admin'):
-        flash('Admin access only!')
+    # ---- GET CURRENT TENANT (NEW) ----
+    tenant_id = session.get('tenant_id')
+    if not tenant_id:
+        flash('No tenant selected! Switch to a tenant first.', 'danger')
+        return redirect(url_for('manage_tenants'))  # Or index()
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        flash('Invalid tenant!', 'danger')
+        return redirect(url_for('manage_tenants'))
+
+    # Only tenant admins or super-admins can manage users (UPDATED)
+    if not (current_user.is_admin or current_user.is_super_admin):
+        flash('Admin access required!', 'danger')
         return redirect(url_for('profile'))
 
     if request.method == 'POST':
@@ -437,27 +510,41 @@ def manage_users():
         password = request.form.get('password')
 
         if action == 'add':
-            if User.query.filter_by(username=username).first():
-                flash(f'User {username} already exists!')
-            elif User.query.count() >= MAX_USERS:
-                flash(f'Cannot add more than {MAX_USERS} users!')
+            # Check if user already exists IN THIS TENANT (UPDATED)
+            if User.query.filter_by(username=username, tenant_id=tenant.id).first():
+                flash(f'User {username} already exists in this tenant!', 'danger')
+            elif User.query.filter_by(tenant_id=tenant.id).count() >= MAX_USERS:
+                flash(f'Cannot add more than {MAX_USERS} users per tenant!', 'danger')
             else:
-                new_user = User(username=username, password=password, is_admin=False)
+                # CREATE USER WITH TENANT_ID (FIX!)
+                new_user = User(
+                    username=username,
+                    password=password,  # TODO: Hash this in production!
+                    is_admin=False,
+                    tenant_id=tenant.id  # ← THIS WAS MISSING
+                )
                 db.session.add(new_user)
                 db.session.commit()
-                flash(f'User {username} added!')
+                flash(f'User {username} added to tenant "{tenant.name}"!', 'success')
+
         elif action == 'delete':
-            user = User.query.filter_by(username=username).first()
-            if user and not user.is_admin:
-                db.session.delete(user)
+            user_to_delete = User.query.filter_by(id=request.form.get('user_id'), tenant_id=tenant.id).first()
+            if user_to_delete and not user_to_delete.is_admin and not user_to_delete.is_super_admin:
+                username = user_to_delete.username
+                db.session.delete(user_to_delete)
                 db.session.commit()
-                flash(f'User {username} deleted!')
+                flash(f'User {username} deleted!', 'success')
             else:
-                flash('Cannot delete admin or user not found!')
+                flash('Cannot delete admin users or user not found!', 'danger')
 
-    users = User.query.all()
-    return render_template('manage_users.html', users=users, max_users=MAX_USERS, exchange_name=EXCHANGE_NAME)
+    # Get users FOR THIS TENANT ONLY (UPDATED)
+    users = User.query.filter_by(tenant_id=tenant.id).all()
 
+    return render_template('manage_users.html',
+                           users=users,
+                           max_users=MAX_USERS,
+                           exchange_name=EXCHANGE_NAME,
+                           tenant=tenant)  # Pass tenant to template
 @app.route('/edit_exchange_name', methods=['POST'])
 def edit_exchange_name():
     if 'user_id' not in session or not session.get('is_admin'):
@@ -479,14 +566,18 @@ def customers():
 @app.route('/select_customer/<int:client_id>')
 def select_customer(client_id):
     session['selected_client_id'] = client_id
-    client = Client.query.get(client_id)
+    client = Client.query.filter_by(id=client_id, tenant_id=session.get('tenant_id')).first()
+    if not client:
+        flash('Client not found or access denied!')
+        return redirect(url_for('customers'))
     session['selected_client_name'] = f"{client.first_name} {client.last_name}"
     flash('Client selected!')
     return redirect(url_for('index'))
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 def edit_client(client_id):
-    client = None if client_id == 'new' else Client.query.get_or_404(int(client_id))
+    client = None if client_id == 'new' else Client.query.filter_by(id=int(client_id), tenant_id=session.get('tenant_id')).first_or_404()
+
     if request.method == 'POST':
         if not client: client = Client()
         client.first_name = request.form['first_name']
@@ -501,6 +592,7 @@ def edit_client(client_id):
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
+        client.tenant_id = session.get('tenant_id')
 
         for i in range(1, 4):
             prefix = f'id{i}_'
@@ -525,7 +617,8 @@ def edit_client(client_id):
 @app.route('/download_id/<int:client_id>/<int:id_num>')
 def download_id_file(client_id, id_num):
 
-    client = Client.query.get_or_404(client_id)
+    #client = Client.query.get_or_404(client_id)
+    client = Client.query.filter_by(id=client_id, tenant_id=session.get('tenant_id')).first_or_404()
     filename = getattr(client, f'id{id_num}_filename')
     if not filename: flash('File not found!'); return redirect(url_for('edit_client', client_id=client_id))
     setattr(client, f'id{id_num}_last_download', datetime.utcnow())
@@ -534,7 +627,8 @@ def download_id_file(client_id, id_num):
 
 @app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])  # ← ADD <int:>
 def edit_transaction(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    #tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     if request.method == 'POST':
         tx.from_amount = float(request.form['from_amount'])
         tx.to_amount = tx.from_amount * float(request.form['exchange_rate'])
@@ -556,7 +650,7 @@ def transactions():
     search_to = request.args.get('to_currency', '').upper(); fintrac = request.args.get('fintrac', '')
     status = request.args.get('status', '')
 
-    query = Transaction.query.order_by(Transaction.date.desc())
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
     if not session.get('is_admin'):
         client_id = session.get('selected_client_id')
         if not client_id:
@@ -596,7 +690,7 @@ def transactions():
 @app.route('/update_status/<int:tx_id>', methods=['POST'])
 def update_status(tx_id):
 
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     tx.status = request.form['status']
     db.session.commit()
     flash(f'Transaction #{tx.tx_ref} status: {tx.status.upper()}')
@@ -606,7 +700,7 @@ def update_status(tx_id):
 def delete_transaction(tx_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     if not session.get('is_admin'):
         flash('Access denied!')
         return redirect(url_for('transactions'))
@@ -621,7 +715,7 @@ def charts():
 
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     client_id = session.get('selected_client_id')
-    query = Transaction.query.filter(Transaction.date >= thirty_days_ago)
+    query = Transaction.query.filter(Transaction.date >= thirty_days_ago, Transaction.tenant_id==session.get('tenant_id'))
     if client_id: query = query.filter_by(client_id=client_id)
     transactions = query.order_by(Transaction.date).all()
 
@@ -658,7 +752,7 @@ def get_live_rate(from_curr, to_curr):
 @app.route('/export')
 def export_csv():
 
-    query = Transaction.query.order_by(Transaction.date.desc())
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
     all_tx = query.all() if session.get('is_admin') else \
              query.filter_by(client_id=session.get('selected_client_id')).all() if session.get('selected_client_id') else []
 
@@ -712,13 +806,14 @@ def deposit():
             is_fintrac=(amount >= 10000), client_id=session['selected_client_id'],
             status=request.form.get('status', 'closed'),
             is_deposit=True,
-            total_fee_cad=0.0
+            total_fee_cad=0.0,
+            tenant_id=session.get('tenant_id')
 
         )
         db.session.add(new_tx); db.session.commit()
         flash(f'Deposited ${amount} {currency}!')
         return redirect(url_for('deposit'))
-    total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(client_id=session['selected_client_id']).scalar() or 0
+    total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(client_id=session['selected_client_id'], tenant_id=session.get('tenant_id')).scalar() or 0
     return render_template('deposit.html', total_deposits=total_deposits, client=client,
                            current_fee=0, current_flat_fee=0)
 
@@ -727,7 +822,7 @@ def reports():
     if not current_user.is_authenticated:
         return redirect(url_for('login'))
 
-    transactions = Transaction.query.filter_by(status='closed').all()
+    transactions = Transaction.query.filter_by(status='closed', tenant_id=session.get('tenant_id')).all()
 
     daily_profit = {}
     week_total = 0
@@ -782,7 +877,7 @@ def reports():
 
 @app.route('/download_receipt/<int:tx_id>')
 def download_receipt(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     if not tx.receipt_filename: flash('No receipt found!'); return redirect(url_for('transactions'))
     return send_from_directory(app.config['RECEIPT_FOLDER'], tx.receipt_filename)
 
@@ -802,7 +897,7 @@ def print_receipt(tx_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
 
     # === CALCULATE PROFIT & FEES ===
@@ -821,7 +916,7 @@ def print_receipt(tx_id):
 
 @app.route('/download_pdf/<int:tx_id>')
 def download_pdf(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
 
     flat_fee_in_tx_currency = FLAT_FEE_CAD
@@ -849,7 +944,7 @@ def download_pdf(tx_id):
 
 @app.route('/download_png/<int:tx_id>')
 def download_png(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
 
     flat_fee_in_tx_currency = FLAT_FEE_CAD
@@ -880,6 +975,33 @@ def download_png(tx_id):
         mimetype='image/png'
     )
 
+# -------------------------------------------------
+#  SWITCH TENANT (Super-Admin only)
+# -------------------------------------------------
+@app.route('/switch_tenant', methods=['POST'])
+@login_required
+def switch_tenant():
+    if not current_user.is_super_admin:
+        flash('Super-admin access required!', 'danger')
+        return redirect(url_for('index'))
+
+    tenant_id = request.form.get('tenant_id')
+    if not tenant_id:
+        flash('Tenant ID missing!', 'danger')
+        return redirect(url_for('manage_tenants'))
+
+    tenant = Tenant.query.get(int(tenant_id))
+    if not tenant:
+        flash('Tenant not found!', 'danger')
+        return redirect(url_for('manage_tenants'))
+
+    # ---- Update session ----
+    session['tenant_id'] = tenant.id
+    session.pop('selected_client_id', None)   # clear client selection
+    session.pop('selected_client_name', None)
+
+    flash(f'Switched to tenant: <strong>{tenant.name}</strong>', 'success')
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True)
