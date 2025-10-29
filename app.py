@@ -146,6 +146,7 @@ class Transaction(db.Model):
 
 # === DATABASE INIT ===
 # === DATABASE INIT ===
+# === DATABASE INIT ===
 with app.app_context():
     db.create_all()
 
@@ -159,8 +160,9 @@ with app.app_context():
             conn.execute(sa.text('UPDATE user SET is_super_admin = 0'))
             conn.commit()
 
-    # CREATE DEFAULT SUPER ADMIN TENANT
+    # === CREATE DEFAULT SUPER ADMIN TENANT + USER ===
     if not Tenant.query.first():
+        # Create default tenant
         default_tenant = Tenant(
             name='MoneyExchange Pro - Admin',
             client_name='Super Admin',
@@ -170,18 +172,23 @@ with app.app_context():
             max_users=5
         )
         db.session.add(default_tenant)
-        db.session.flush()
+        db.session.flush()  # Get ID
 
+        # Create super admin user
         admin = User(
             username='admin',
-            password='admin123',
+            password='admin123',  # TODO: Hash in production
             is_admin=True,
             is_super_admin=True,
             tenant_id=default_tenant.id
         )
         db.session.add(admin)
         db.session.commit()
-        print("Default super admin created!")
+
+        print("DEFAULT SUPER ADMIN CREATED: username=admin, password=admin123")
+        print("Login at: http://127.0.0.1:5000/login")
+    else:
+        print("Default tenant already exists.")
 
 
 # === WKHTMLTOPDF CONFIG (GLOBAL) ===
@@ -371,22 +378,22 @@ def create_tenant():
             subject=f"Your {name} Account is Ready!",
             recipients=[email],
             body=f"""
-Hello {client_name},
+            Hello {client_name},
 
-Your MoneyExchange Pro is LIVE!
+            Your MoneyExchange Pro is LIVE!
 
-Exchange: {name}
-Package: {package}-User Plan
-Login: http://127.0.0.1:5000/login
-Username: {admin_user.username}
-Password: {password}
+            Exchange: {name}
+            Package: {package}-User Plan
+            Login URL: http://127.0.0.1:5000/login
+            Username: {admin_user.username}
+            Password: {password}
 
-Change your password after login.
+            IMPORTANT: After first login, change your password.
 
-Support: support@moneyexchange.com
+            Support: support@moneyexchange.com
 
----
-MoneyExchange Pro Team
+            ---
+            MoneyExchange Pro Team
             """
         )
         mail.send(msg)
@@ -397,11 +404,34 @@ MoneyExchange Pro Team
         flash(f'Client registered but EMAIL FAILED: {error_msg}', 'danger')
 
     return redirect(url_for('profile'))
+# === MOVE /login HERE ===
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.password == password:
+            login_user(user, remember=True)
+            session['user_id'] = user.id
+            session['is_admin'] = user.is_admin
+            session['tenant_id'] = user.tenant_id
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+
+        flash('Invalid username or password.', 'danger')
+
+    return render_template('login.html')
+
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    session.pop('tenant_id', None)  # ← NEW: Clear tenant_id
+    session.pop('tenant_id', None)
     flash('Logged out successfully!', 'success')
     return redirect(url_for('login'))
 
