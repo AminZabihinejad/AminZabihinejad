@@ -1,71 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Manage Tenants{% endblock %}
+{% block title %}SaaS Clients{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
+    <h1>SaaS Clients</h1>
+    <p class="lead">Manage client subscriptions.</p>
 
-    <h2 class="mb-4">Manage Tenants</h2>
-
-    <!-- ==== SWITCH TENANT ==== -->
-    {% if current_user.is_super_admin %}
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-            <strong>Switch Tenant</strong>
-        </div>
-        <div class="card-body">
-            <form method="post" action="{{ url_for('switch_tenant') }}">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <select name="tenant_id" class="form-select" required>
-                            {% for t in tenants %}
-                                <option value="{{ t.id }}"
-                                        {% if session.tenant_id == t.id %}selected{% endif %}>
-                                    {{ t.name }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <button type="submit" class="btn btn-success w-100">Switch</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-    {% endif %}
-    <!-- ==== END SWITCH ==== -->
-
-    <!-- ==== ADD TENANT ==== -->
-    <div class="card mb-4">
-        <div class="card-header bg-info text-white">Add New Tenant</div>
-        <div class="card-body">
-            <form method="post">
-                <input type="hidden" name="action" value="add">
-                <div class="row g-3 align-items-center">
-                    <div class="col-md-8">
-                        <input type="text" name="name" class="form-control" placeholder="Tenant name" required>
-                    </div>
-                    <div class="col-md-4">
-                        <button type="submit" class="btn btn-primary w-100">Add Tenant</button>
-                    </div>
-                </div>
-            </form>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Status</th>
+                    <th>Exchange</th>
+                    <th>Client</th>
+                    <th>Email</th>
+                    <th>Package</th>
+                    <th>Users</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tenants %}
+                <tr class="{% if not t.is_active %}table-danger{% endif %}">
+                    <td>
+                        <span class="badge {% if t.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ 'Active' if t.is_active else 'Disabled' }}
+                        </span>
+                    </td>
+                    <td><strong>{{ t.name }}</strong></td>
+                    <td>{{ t.client_name }}</td>
+                    <td>{{ t.client_email }}</td>
+                    <td><strong>{{ t.max_users }}-User</strong></td>
+                    <td>{{ t.users|length }} / {{ t.max_users }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('toggle_tenant', tenant_id=t.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm {% if t.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                                {{ 'Disable' if t.is_active else 'Enable' }}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 
-    <!-- ==== LIST TENANTS ==== -->
-    <div class="card">
-        <div class="card-header bg-secondary text-white">Existing Tenants</div>
-        <ul class="list-group list-group-flush">
-            {% for t in tenants %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                {{ t.name }} <span class="badge bg-primary rounded-pill">{{ t.users|length }} user(s)</span>
-            </li>
-            {% else %}
-            <li class="list-group-item text-muted">No tenants yet.</li>
-            {% endfor %}
-        </ul>
+    <div class="text-center mt-4">
+        <a href="{{ url_for('profile') }}" class="btn btn-outline-primary">Back to Profile</a>
     </div>
-
 </div>
 {% endblock %}

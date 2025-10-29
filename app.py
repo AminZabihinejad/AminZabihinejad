@@ -17,7 +17,8 @@ import pdfkit
 import io
 import os
 import imgkit
-
+from flask_mail import Mail, Message  # ADD AT TOP
+import secrets
 # === EXCHANGE NAME (GLOBAL) ===
 EXCHANGE_NAME = "MoneyExchange Pro"
 MAX_USERS = 5  # 5-user package
@@ -48,12 +49,26 @@ app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
 
+# === EMAIL CONFIG (GMAIL) ===
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'piggy.bank.exchanger@gmail.com'  # CHANGE
+app.config['MAIL_PASSWORD'] = 'bsfc smqg nxtd nsxz'     # CHANGE (App Password!)
+app.config['MAIL_DEFAULT_SENDER'] = 'piggy.bank.exchanger@gmail.com'
+
+mail = Mail(app)
+
 class Tenant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)  # e.g., "ExchangeA"
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    client_name = db.Column(db.String(100), nullable=False)
+    client_email = db.Column(db.String(120), unique=True, nullable=False)
+    client_phone = db.Column(db.String(30))
+    is_active = db.Column(db.Boolean, default=True)
+    max_users = db.Column(db.Integer, default=5)  # ← NEW
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships (optional for now)
     users = db.relationship('User', backref='tenant', lazy=True)
 
 # === MODELS ===
@@ -134,7 +149,7 @@ class Transaction(db.Model):
 with app.app_context():
     db.create_all()
 
-    # ---- ONE-TIME COLUMN FIX (remove after first run) ----
+    # Add is_super_admin column if missing
     import sqlalchemy as sa
     from sqlalchemy import inspect
     inspector = inspect(db.engine)
@@ -143,25 +158,30 @@ with app.app_context():
             conn.execute(sa.text('ALTER TABLE user ADD COLUMN is_super_admin BOOLEAN'))
             conn.execute(sa.text('UPDATE user SET is_super_admin = 0'))
             conn.commit()
-    # -----------------------------------------------------
 
-    if not Tenant.query.filter_by(name='DefaultTenant').first():
-        default_tenant = Tenant(name='DefaultTenant')
+    # CREATE DEFAULT SUPER ADMIN TENANT
+    if not Tenant.query.first():
+        default_tenant = Tenant(
+            name='MoneyExchange Pro - Admin',
+            client_name='Super Admin',
+            client_email='admin@moneyexchange.com',
+            client_phone='+1 555-000-0000',
+            is_active=True,
+            max_users=5
+        )
         db.session.add(default_tenant)
-        db.session.commit()
+        db.session.flush()
 
-    if not User.query.filter_by(username='admin').first():
-        admin_tenant = Tenant.query.filter_by(name='DefaultTenant').first()
         admin = User(
             username='admin',
             password='admin123',
             is_admin=True,
-            is_super_admin=True,          # ← now the column exists
-            tenant_id=admin_tenant.id
+            is_super_admin=True,
+            tenant_id=default_tenant.id
         )
         db.session.add(admin)
         db.session.commit()
-
+        print("Default super admin created!")
 
 
 # === WKHTMLTOPDF CONFIG (GLOBAL) ===
@@ -289,27 +309,94 @@ app.jinja_env.filters['filesizeformat'] = filesizeformat
 
 # === ROUTES ===
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
 
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        user = User.query.filter_by(username=username).first()
 
-        if user and user.password == password:
-            login_user(user, remember=True)
-            session['user_id'] = user.id
-            session['is_admin'] = user.is_admin
-            session['tenant_id'] = user.tenant_id  # ← NEW: Store tenant_id
-            flash('Login successful!', 'success')
-            return redirect(url_for('index'))
 
-        flash('Invalid username or password.', 'danger')
 
-    return render_template('login.html')
+# === REGISTER NEW SOFTWARE CLIENT ===
+@app.route('/create_tenant', methods=['POST'])
+@login_required
+def create_tenant():
+    if not current_user.is_super_admin:
+        flash('Super admin access only!', 'danger')
+        return redirect(url_for('profile'))
+
+    name = request.form['exchange_name'].strip()
+    client_name = request.form['client_name'].strip()
+    email = request.form['client_email'].strip().lower()
+    phone = request.form['client_phone'].strip()
+    package = int(request.form['package'])
+
+    if package not in [1, 5]:
+        flash('Invalid package!', 'danger')
+        return redirect(url_for('profile'))
+
+    if not all([name, client_name, email]):
+        flash('All fields required!', 'danger')
+        return redirect(url_for('profile'))
+
+    if Tenant.query.filter_by(name=name).first():
+        flash('Exchange name exists!', 'danger')
+        return redirect(url_for('profile'))
+    if Tenant.query.filter_by(client_email=email).first():
+        flash('Email already registered!', 'danger')
+        return redirect(url_for('profile'))
+
+    password = secrets.token_urlsafe(10)
+
+    tenant = Tenant(
+        name=name,
+        client_name=client_name,
+        client_email=email,
+        client_phone=phone,
+        is_active=True,
+        max_users=package
+    )
+    db.session.add(tenant)
+    db.session.flush()
+
+    admin_user = User(
+        username=email.split('@')[0][:20],
+        password=password,
+        is_admin=True,
+        is_super_admin=False,
+        tenant_id=tenant.id
+    )
+    db.session.add(admin_user)
+    db.session.commit()
+
+    # === SEND EMAIL WITH FULL DEBUG ===
+    try:
+        msg = Message(
+            subject=f"Your {name} Account is Ready!",
+            recipients=[email],
+            body=f"""
+Hello {client_name},
+
+Your MoneyExchange Pro is LIVE!
+
+Exchange: {name}
+Package: {package}-User Plan
+Login: http://127.0.0.1:5000/login
+Username: {admin_user.username}
+Password: {password}
+
+Change your password after login.
+
+Support: support@moneyexchange.com
+
+---
+MoneyExchange Pro Team
+            """
+        )
+        mail.send(msg)
+        flash(f'Client registered! Email sent to {email}', 'success')
+    except Exception as e:
+        error_msg = str(e)
+        print(f"EMAIL ERROR: {error_msg}")  # ← SEE IN CONSOLE
+        flash(f'Client registered but EMAIL FAILED: {error_msg}', 'danger')
+
+    return redirect(url_for('profile'))
 @app.route('/logout')
 @login_required
 def logout():
@@ -318,25 +405,15 @@ def logout():
     flash('Logged out successfully!', 'success')
     return redirect(url_for('login'))
 
-@app.route('/manage_tenants', methods=['GET', 'POST'])
+@app.route('/manage_tenants')
 @login_required
 def manage_tenants():
     if not current_user.is_super_admin:
-        flash('Super admin access only!')
+        flash('Super admin access only!', 'danger')
         return redirect(url_for('profile'))
-    if request.method == 'POST':
-        action = request.form.get('action')
-        name = request.form.get('name')
-        if action == 'add':
-            if Tenant.query.filter_by(name=name).first():
-                flash('Tenant exists!')
-            else:
-                new_tenant = Tenant(name=name)
-                db.session.add(new_tenant)
-                db.session.commit()
-                flash('Tenant added!')
-    tenants = Tenant.query.all()
-    return render_template('manage_tenants.html', tenants=tenants)  # Create this template
+
+    tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
+    return render_template('manage_tenants.html', tenants=tenants)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -460,31 +537,42 @@ def index():
                            fee_percentage=current_fee, flat_fee_cad=current_flat_fee)
 
 @app.route('/profile')
+@login_required
 def profile():
-    if 'user_id' not in session:
+    tenant_id = session.get('tenant_id')
+    if not tenant_id:
+        flash('No tenant selected!', 'danger')
         return redirect(url_for('login'))
 
-    current_user = User.query.get(session['user_id'])
-    total_transactions = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).count()
-    total_clients = Client.query.filter_by(tenant_id=session.get('tenant_id')).count()
-    total_users = User.query.filter_by(tenant_id=session.get('tenant_id')).count()
-    users = User.query.filter_by(tenant_id=session.get('tenant_id')).all() if current_user.is_admin else []
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        flash('Invalid tenant!', 'danger')
+        return redirect(url_for('login'))
+
+    # Current logged-in user
+    user = current_user
+
+    # Tenant-specific stats
+    total_transactions = Transaction.query.filter_by(tenant_id=tenant_id).count()
+    total_clients = Client.query.filter_by(tenant_id=tenant_id).count()
+    total_users = User.query.filter_by(tenant_id=tenant_id).count()
+    users = User.query.filter_by(tenant_id=tenant_id).all()
 
     current_fee = round(FEE_PERCENTAGE * 100, 1)
     current_flat_fee = round(FLAT_FEE_CAD, 2)
 
     return render_template('profile.html',
-                           user=current_user,
+                           user=user,
+                           tenant=tenant,
                            total_transactions=total_transactions,
                            total_clients=total_clients,
                            total_users=total_users,
                            users=users,
                            exchange_name=EXCHANGE_NAME,
-                           max_users=MAX_USERS,
+                           max_users=tenant.max_users,
                            current_fee=current_fee,
-                           current_flat_fee=current_flat_fee)
-
-
+                           current_flat_fee=current_flat_fee,
+                           is_super_admin=user.is_super_admin)
 @app.route('/manage_users', methods=['GET', 'POST'])
 @login_required
 def manage_users():
@@ -1030,6 +1118,21 @@ def switch_tenant():
 
     flash(f'Switched to tenant: <strong>{tenant.name}</strong>', 'success')
     return redirect(url_for('index'))
+
+@app.route('/toggle_tenant/<int:tenant_id>', methods=['POST'])
+@login_required
+def toggle_tenant(tenant_id):
+    if not current_user.is_super_admin:
+        flash('Super admin access only!', 'danger')
+        return redirect(url_for('profile'))
+
+    tenant = Tenant.query.get_or_404(tenant_id)
+    tenant.is_active = not tenant.is_active
+    status = 'activated' if tenant.is_active else 'disabled'
+    db.session.commit()
+    flash(f'Client {tenant.client_name} ({tenant.name}) {status}',
+          'success' if tenant.is_active else 'warning')
+    return redirect(url_for('manage_tenants'))
 
 if __name__ == '__main__':
     app.run(debug=True)
