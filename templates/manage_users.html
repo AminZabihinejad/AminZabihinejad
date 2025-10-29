@@ -1,50 +1,89 @@
 {% extends "base.html" %}
-{% block title %}Manage Users - {{ exchange_name }}{% endblock %}
+{% block title %}Manage Users - {{ tenant.name }}{% endblock %}
+
 {% block content %}
+<div class="container mt-4">
+    <h2>Manage Users for <strong>{{ tenant.name }}</strong></h2>
+    <p><strong>Package:</strong> {{ max_users }}-User Plan</p>
+    <p><strong>Users:</strong> {{ current_count }} / {{ max_users }}</p>
 
-<h2>Manage Users ({{ users|length }} / {{ max_users }})</h2>
-
-<!-- ADD USER -->
-<div style="background:#e8f7ff; padding:20px; border-radius:8px; margin-bottom:20px;">
-    <h3>Add New User</h3>
-    <form method="POST">
-        <input type="hidden" name="action" value="add">
-        <input type="text" name="username" placeholder="Username" required style="padding:8px; margin-right:10px; width:200px;">
-        <input type="password" name="password" placeholder="Password" required style="padding:8px; margin-right:10px; width:200px;">
-        <button type="submit" style="padding:8px 16px; background:#27ae60; color:white; border:none; border-radius:4px;">Add User</button>
-    </form>
-</div>
-
-<!-- USER LIST -->
-<div style="background:white; padding:20px; border-radius:8px;">
-    <table style="width:100%; border-collapse:collapse;">
-        <tr style="background:#2196f3; color:white;">
-            <th style="padding:10px; text-align:left;">Username</th>
-            <th style="padding:10px; text-align:center;">Role</th>
-            <th style="padding:10px; text-align:center;">Action</th>
-        </tr>
-        {% for u in users %}
-        <tr style="border-bottom:1px solid #eee;">
-            <td style="padding:10px;">{{ u.username }}</td>
-            <td style="padding:10px; text-align:center;">
-                {% if u.is_admin %}Admin{% else %}User{% endif %}
-            </td>
-            <td style="padding:10px; text-align:center;">
-                {% if not u.is_admin %}
-                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete {{ u.username }}?')">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="username" value="{{ u.username }}">
-                    <button type="submit" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px; font-size:12px;">Delete</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
         {% endfor %}
-    </table>
-</div>
+      {% endif %}
+    {% endwith %}
 
-<div style="margin-top:20px; text-align:center;">
-    <a href="{{ url_for('profile') }}" style="background:#3498db; color:white; padding:10px 20px; border-radius:4px; text-decoration:none;">Back to Profile</a>
-</div>
+    <!-- Add User Form -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5>Add New User</h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                <input type="hidden" name="action" value="add">
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <input type="text" name="username" class="form-control" placeholder="Username" required>
+                    </div>
+                    <div class="col-md-5">
+                        <input type="password" name="password" class="form-control" placeholder="Password" required>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100" 
+                                {% if current_count >= max_users %}disabled{% endif %}>
+                            Add User
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 
+    <!-- Users List -->
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td><strong>{{ user.username }}</strong></td>
+                    <td>
+                        {% if user.is_super_admin %}Super Admin
+                        {% elif user.is_admin %}Admin
+                        {% else %}User
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if not user.is_admin and not user.is_super_admin %}
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="user_id" value="{{ user.id }}">
+                            <button type="submit" class="btn btn-sm btn-danger"
+                                    onclick="return confirm('Delete {{ user.username }}?')">
+                                Delete
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">Protected</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <a href="{{ url_for('profile') }}" class="btn btn-outline-secondary">Back to Profile</a>
+</div>
 {% endblock %}

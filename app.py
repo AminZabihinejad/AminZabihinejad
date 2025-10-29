@@ -606,21 +606,22 @@ def profile():
 @app.route('/manage_users', methods=['GET', 'POST'])
 @login_required
 def manage_users():
-    # ---- GET CURRENT TENANT (NEW) ----
     tenant_id = session.get('tenant_id')
     if not tenant_id:
-        flash('No tenant selected! Switch to a tenant first.', 'danger')
-        return redirect(url_for('manage_tenants'))  # Or index()
+        flash('No tenant selected!', 'danger')
+        return redirect(url_for('index'))
 
     tenant = Tenant.query.get(tenant_id)
     if not tenant:
         flash('Invalid tenant!', 'danger')
-        return redirect(url_for('manage_tenants'))
+        return redirect(url_for('index'))
 
-    # Only tenant admins or super-admins can manage users (UPDATED)
     if not (current_user.is_admin or current_user.is_super_admin):
         flash('Admin access required!', 'danger')
         return redirect(url_for('profile'))
+
+    # === COUNT CURRENT USERS ===
+    current_count = User.query.filter_by(tenant_id=tenant.id).count()
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -628,41 +629,42 @@ def manage_users():
         password = request.form.get('password')
 
         if action == 'add':
-            # Check if user already exists IN THIS TENANT (UPDATED)
             if User.query.filter_by(username=username, tenant_id=tenant.id).first():
-                flash(f'User {username} already exists in this tenant!', 'danger')
-            elif User.query.filter_by(tenant_id=tenant.id).count() >= MAX_USERS:
-                flash(f'Cannot add more than {MAX_USERS} users per tenant!', 'danger')
+                flash(f'User {username} already exists!', 'danger')
+            elif current_count >= tenant.max_users:
+                flash(f'Package limit reached: {current_count}/{tenant.max_users} users.', 'danger')
             else:
-                # CREATE USER WITH TENANT_ID (FIX!)
                 new_user = User(
                     username=username,
-                    password=password,  # TODO: Hash this in production!
+                    password=password,
                     is_admin=False,
-                    tenant_id=tenant.id  # ← THIS WAS MISSING
+                    tenant_id=tenant.id
                 )
                 db.session.add(new_user)
                 db.session.commit()
-                flash(f'User {username} added to tenant "{tenant.name}"!', 'success')
+                flash(f'User {username} added! ({current_count + 1}/{tenant.max_users})', 'success')
 
         elif action == 'delete':
-            user_to_delete = User.query.filter_by(id=request.form.get('user_id'), tenant_id=tenant.id).first()
+            user_id = request.form.get('user_id')
+            user_to_delete = User.query.filter_by(id=user_id, tenant_id=tenant.id).first()
             if user_to_delete and not user_to_delete.is_admin and not user_to_delete.is_super_admin:
-                username = user_to_delete.username
                 db.session.delete(user_to_delete)
                 db.session.commit()
-                flash(f'User {username} deleted!', 'success')
+                flash(f'User {user_to_delete.username} deleted!', 'success')
             else:
-                flash('Cannot delete admin users or user not found!', 'danger')
+                flash('Cannot delete admin or invalid user!', 'danger')
 
-    # Get users FOR THIS TENANT ONLY (UPDATED)
+    # === REFRESH COUNT AFTER POST ===
+    current_count = User.query.filter_by(tenant_id=tenant.id).count()
     users = User.query.filter_by(tenant_id=tenant.id).all()
 
     return render_template('manage_users.html',
                            users=users,
-                           max_users=MAX_USERS,
-                           exchange_name=EXCHANGE_NAME,
-                           tenant=tenant)  # Pass tenant to template
+                           current_count=current_count,      # ← PASS IT
+                           max_users=tenant.max_users,       # ← PACKAGE LIMIT
+                           tenant=tenant,
+                           exchange_name=EXCHANGE_NAME)
+
 @app.route('/edit_exchange_name', methods=['POST'])
 def edit_exchange_name():
     if 'user_id' not in session or not session.get('is_admin'):
