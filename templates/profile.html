@@ -54,9 +54,7 @@
 
 <!-- FEE DISPLAY -->
 <div style="margin-top:20px; background:#fff3cd; padding:15px; border-radius:8px; text-align:center;">
-    <strong>Current Fees:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD 
-    | <strong>Per $200 CAD:</strong> ${{ "%.2f"|format((200 * (current_fee / 100)) + current_flat_fee) }}
-</div>
+    <strong>Current Fees:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD</div>
 
 <!-- SUPER ADMIN: REGISTER NEW CLIENT -->
 {% if is_super_admin %}
