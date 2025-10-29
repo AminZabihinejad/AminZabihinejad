@@ -790,32 +790,60 @@ def export_csv():
     return app.response_class(output.getvalue(), mimetype='text/csv',
                               headers={'Content-Disposition': f'attachment;filename=transactions.csv'})
 
+
 @app.route('/deposit', methods=['GET', 'POST'])
 @login_required
 def deposit():
-    if 'user_id' not in session or not session.get('selected_client_id'):
-        flash('SELECT A CLIENT FIRST!'); return redirect(url_for('index'))
-    client = Client.query.get(session['selected_client_id'])
+    # FIXED: Allow deposit page without client (shows "Select client first")
+    if 'user_id' not in session:
+        flash('Please login first!');
+        return redirect(url_for('login'))
+
+    client = Client.query.filter_by(id=session.get('selected_client_id'), tenant_id=session.get('tenant_id')).first()
+
     if request.method == 'POST':
-        currency = request.form['currency']; amount = float(request.form['amount'])
+        if not session.get('selected_client_id'):
+            flash('SELECT A CLIENT FIRST!');
+            return redirect(url_for('customers'))
+
+        currency = request.form['currency']
+        amount = float(request.form['amount'])
         notes = request.form.get('notes', f'Deposit {amount} {currency}')
         tx_ref = generate_tx_ref()
+
         new_tx = Transaction(
-            tx_ref=tx_ref, from_currency=currency, to_currency=currency,
-            from_amount=0, to_amount=amount, exchange_rate=1.0, notes=notes,
-            is_fintrac=(amount >= 10000), client_id=session['selected_client_id'],
+            tx_ref=tx_ref,
+            from_currency=currency,
+            to_currency=currency,
+            from_amount=0,
+            to_amount=amount,
+            exchange_rate=1.0,
+            notes=notes,
+            is_fintrac=(amount >= 10000),
+            client_id=session['selected_client_id'],
             status=request.form.get('status', 'closed'),
             is_deposit=True,
             total_fee_cad=0.0,
             tenant_id=session.get('tenant_id')
-
         )
-        db.session.add(new_tx); db.session.commit()
-        flash(f'Deposited ${amount} {currency}!')
+        db.session.add(new_tx)
+        db.session.commit()
+        flash(f'✅ Deposited ${amount} {currency}!')
         return redirect(url_for('deposit'))
-    total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(client_id=session['selected_client_id'], tenant_id=session.get('tenant_id')).scalar() or 0
-    return render_template('deposit.html', total_deposits=total_deposits, client=client,
-                           current_fee=0, current_flat_fee=0)
+
+    # Show page even without client selected
+    total_deposits = 0
+    if client:
+        total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(
+            client_id=client.id,
+            tenant_id=session.get('tenant_id')
+        ).scalar() or 0
+
+    return render_template('deposit.html',
+                           total_deposits=total_deposits,
+                           client=client,
+                           current_fee=0,
+                           current_flat_fee=0)
 
 @app.route('/reports')
 def reports():
