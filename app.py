@@ -9,6 +9,7 @@ import json
 import csv
 from io import StringIO
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import uuid
 from math import ceil
@@ -80,6 +81,7 @@ class User(UserMixin, db.Model):
     is_super_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
+    requires_password_change = db.Column(db.Boolean, default=True)
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -177,7 +179,7 @@ with app.app_context():
         # Create super admin user
         admin = User(
             username='admin',
-            password='admin123',  # TODO: Hash in production
+            password=generate_password_hash('admin123'),  # HASH
             is_admin=True,
             is_super_admin=True,
             tenant_id=default_tenant.id
@@ -362,9 +364,11 @@ def create_tenant():
     db.session.add(tenant)
     db.session.flush()
 
+    # Example: In create_tenant()
+    password = secrets.token_urlsafe(10)
     admin_user = User(
         username=email.split('@')[0][:20],
-        password=password,
+        password=generate_password_hash(password),  # HASH IT
         is_admin=True,
         is_super_admin=False,
         tenant_id=tenant.id
@@ -375,8 +379,6 @@ def create_tenant():
     # === SEND EMAIL WITH FULL DEBUG ===
     try:
         msg = Message(
-            subject=f"Your {name} Account is Ready!",
-            recipients=[email],
             body=f"""
             Hello {client_name},
 
@@ -386,9 +388,9 @@ def create_tenant():
             Package: {package}-User Plan
             Login URL: http://127.0.0.1:5000/login
             Username: {admin_user.username}
-            Password: {password}
+            Temporary Password: {password}
 
-            IMPORTANT: After first login, change your password.
+            SECURITY: You MUST change this password on first login!
 
             Support: support@moneyexchange.com
 
@@ -415,11 +417,17 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(username=username).first()
 
-        if user and user.password == password:
+        if user and check_password_hash(user.password, password):
             login_user(user, remember=True)
             session['user_id'] = user.id
             session['is_admin'] = user.is_admin
             session['tenant_id'] = user.tenant_id
+
+            # NEW: Check if password needs reset
+            if getattr(user, 'requires_password_change', False):
+                flash('Please change your password to continue.', 'warning')
+                return redirect(url_for('change_password', first_time=1))
+
             flash('Login successful!', 'success')
             return redirect(url_for('index'))
 
@@ -636,7 +644,7 @@ def manage_users():
             else:
                 new_user = User(
                     username=username,
-                    password=password,
+                    password=generate_password_hash(password),
                     is_admin=False,
                     tenant_id=tenant.id
                 )
@@ -1165,6 +1173,37 @@ def toggle_tenant(tenant_id):
     flash(f'Client {tenant.client_name} ({tenant.name}) {status}',
           'success' if tenant.is_active else 'warning')
     return redirect(url_for('manage_tenants'))
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    first_time = request.args.get('first_time')
+
+    if request.method == 'POST':
+        current_pwd = request.form.get('current_password')
+        new_pwd = request.form.get('new_password')
+        confirm_pwd = request.form.get('confirm_password')
+
+        if not check_password_hash(current_user.password, current_pwd):
+            flash('Current password is incorrect.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        if new_pwd != confirm_pwd:
+            flash('New passwords do not match.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        if len(new_pwd) < 6:
+            flash('Password must be at least 6 characters.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        current_user.password = generate_password_hash(new_pwd)
+        current_user.requires_password_change = False
+        db.session.commit()
+
+        flash('Password changed successfully!', 'success')
+        return redirect(url_for('index'))
+
+    return render_template('change_password.html', first_time=first_time)
 
 if __name__ == '__main__':
     app.run(debug=True)
