@@ -611,6 +611,7 @@ def profile():
                            current_fee=current_fee,
                            current_flat_fee=current_flat_fee,
                            is_super_admin=user.is_super_admin)
+
 @app.route('/manage_users', methods=['GET', 'POST'])
 @login_required
 def manage_users():
@@ -646,7 +647,8 @@ def manage_users():
                     username=username,
                     password=generate_password_hash(password),
                     is_admin=False,
-                    tenant_id=tenant.id
+                    tenant_id=tenant.id,
+                    requires_password_change=True  # ← Force change on first login
                 )
                 db.session.add(new_user)
                 db.session.commit()
@@ -662,16 +664,38 @@ def manage_users():
             else:
                 flash('Cannot delete admin or invalid user!', 'danger')
 
-    # === REFRESH COUNT AFTER POST ===
+    # === REFRESH COUNT & USERS AFTER POST ===
     current_count = User.query.filter_by(tenant_id=tenant.id).count()
-    users = User.query.filter_by(tenant_id=tenant.id).all()
+    users = User.query.filter_by(tenant_id=tenant.id).order_by(User.created_at.desc()).all()
 
-    return render_template('manage_users.html',
-                           users=users,
-                           current_count=current_count,      # ← PASS IT
-                           max_users=tenant.max_users,       # ← PACKAGE LIMIT
-                           tenant=tenant,
-                           exchange_name=EXCHANGE_NAME)
+    return render_template(
+        'manage_users.html',
+        users=users,
+        current_count=current_count,
+        max_users=tenant.max_users,
+        tenant=tenant,
+        exchange_name=EXCHANGE_NAME
+    )
+
+@app.route('/reset_user_password/<int:user_id>', methods=['POST'])
+@login_required
+def reset_user_password(user_id):
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('manage_users'))
+
+    user = User.query.get_or_404(user_id)
+    if user.is_super_admin:
+        flash('Cannot reset Super Admin!', 'danger')
+        return redirect(url_for('manage_users'))
+
+    temp_password = secrets.token_urlsafe(8)
+    user.password = generate_password_hash(temp_password)
+    user.requires_password_change = True
+    db.session.commit()
+
+    flash(f'Password reset for {user.username}. Temp: {temp_password}', 'info')
+    return redirect(url_for('manage_users'))
 
 @app.route('/edit_exchange_name', methods=['POST'])
 def edit_exchange_name():
