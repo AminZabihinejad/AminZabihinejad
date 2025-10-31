@@ -68,14 +68,19 @@ DB_GLOB = "tenant_*.db"                  # matches tenant_1.db, tenant_2.db, etc
 # Ensure the instance folder exists
 os.makedirs(app.instance_path, exist_ok=True)
 # === EMAIL CONFIG ===
+# === EMAIL CONFIG (FIX DEBUG MODE) ===
 app.config.update(
     MAIL_SERVER='smtp.gmail.com',
     MAIL_PORT=587,
     MAIL_USE_TLS=True,
     MAIL_USERNAME='piggy.bank.exchanger@gmail.com',
     MAIL_PASSWORD='bsfc smqg nxtd nsxz',
-    MAIL_DEFAULT_SENDER='piggy.bank.exchanger@gmail.com'
+    MAIL_DEFAULT_SENDER='piggy.bank.exchanger@gmail.com',
+    # ADD THIS LINE:
+    MAIL_SUPPRESS_SEND=False  # ← CRITICAL!
 )
+
+#mail = Mail(app)
 
 # === UPLOAD CONFIG ===
 UPLOAD_FOLDER = 'uploads'
@@ -327,14 +332,18 @@ def backup_email(db_path, key):
             sender=app.config['MAIL_DEFAULT_SENDER']
         )
         with open(encrypted_path, "rb") as f:
-            encrypted_data = f.read()  # Read once
+            encrypted_data = f.read()
         msg.attach(
             filename=filename,
             content_type='application/octet-stream',
             data=encrypted_data
         )
-        mail.send(msg)
+
+        # === FIX: ADD APP CONTEXT ===
+        with app.app_context():
+            mail.send(msg)
         print(f"EMAIL BACKUP SENT → {BACKUP_EMAIL_RECIPIENT}")
+
     except Exception as e:
         print(f"EMAIL BACKUP FAILED: {e}")
         if os.path.exists(encrypted_path):
@@ -663,8 +672,9 @@ def create_tenant():
     db.session.add(tenant)
     db.session.flush()  # Get tenant.id
 
+    admin_username = email.split('@')[0][:20]  # ← SAVE BEFORE COMMIT!
     admin_user = User(
-        username=email.split('@')[0][:20],
+        username=admin_username,
         password=generate_password_hash(temp_password),
         is_admin=True,
         is_super_admin=False,
@@ -672,7 +682,7 @@ def create_tenant():
         requires_password_change=True
     )
     db.session.add(admin_user)
-    db.session.commit()
+    db.session.commit()  # ← Now safe to commit
 
     # === 2. CREATE NEW DB FILE: tenant_{id}.db ===
     # === 2. CREATE NEW DB FILE: tenant_{id}.db ===
@@ -717,28 +727,32 @@ def create_tenant():
     print(f"NEW DB FULLY CREATED: {abs_db_path}")
 
     # === 3. Send Email ===
+    # === 3. Send Email (FORCE SYNC) ===
     try:
         msg = Message(
             subject=f"Your {name} Account",
             recipients=[email],
             sender=app.config['MAIL_DEFAULT_SENDER'],
             body=f"""
-Hello {client_name},
+    Hello {client_name},
 
-Exchange: {name}
-Login: http://127.0.0.1:5000/login
-Username: {admin_user.username}
-Password: {temp_password}
+    Exchange: {name}
+    Login: http://127.0.0.1:5000/login
+    Username: {admin_username}
+    Password: {temp_password}
 
-Change password on first login.
+    Change password on first login.
 
----
-MoneyExchange Pro
+    ---
+    MoneyExchange Pro
             """
         )
-        mail.send(msg)
+        with app.app_context():
+            mail.send(msg)
+        print(f"EMAIL SENT TO: {email}")
         flash(f'Client created & email sent to {email}', 'success')
     except Exception as e:
+        print(f"EMAIL FAILED: {e}")
         flash(f'Client created, email failed: {str(e)}', 'warning')
 
     return redirect(url_for('profile'))
