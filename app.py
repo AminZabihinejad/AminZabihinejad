@@ -29,27 +29,19 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import shutil
 import boto3
 from botocore.exceptions import ClientError
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
-# === AFTER IMPORTS & CONFIG ===
 from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-# ------------------------------------------------------------------
-# FLASK INSTANCE PATH – where SQLite DBs are stored (../instance/)
-# ------------------------------------------------------------------
 
-# ------------------------------------------------------------------
-# BACKUP CONFIGURATION – change ONE line to switch method
-# ------------------------------------------------------------------
-BACKUP_MODE = "email"          # "local" | "email" | "s3"
-BACKUP_LOCAL_DIR = "backups"   # created automatically
+# === CONFIGURATION ===
+BACKUP_MODE = "email"          # "local" | "email" | "s3" | "google_drive"
+BACKUP_LOCAL_DIR = "backups"
 BACKUP_EMAIL_RECIPIENT = "piggy.bank.exchanger@gmail.com"
 S3_BUCKET = "your-moneyexchange-backups"
 S3_PREFIX = "moneyexchange/"
+GOOGLE_DRIVE_FOLDER_ID = "1h1_QuBbPgwxdD1lW5klpsQjQXuKTJ3dB"
 
 # === GLOBALS ===
 EXCHANGE_NAME = "MoneyExchange Pro"
@@ -61,14 +53,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-
-INSTANCE_DIR = Path(app.instance_path)   # e.g. /path/to/project/instance
-DB_GLOB = "tenant_*.db"                  # matches tenant_1.db, tenant_2.db, etc.
-
-# Ensure the instance folder exists
-os.makedirs(app.instance_path, exist_ok=True)
 # === EMAIL CONFIG ===
-# === EMAIL CONFIG (FIX DEBUG MODE) ===
 app.config.update(
     MAIL_SERVER='smtp.gmail.com',
     MAIL_PORT=587,
@@ -76,11 +61,8 @@ app.config.update(
     MAIL_USERNAME='piggy.bank.exchanger@gmail.com',
     MAIL_PASSWORD='bsfc smqg nxtd nsxz',
     MAIL_DEFAULT_SENDER='piggy.bank.exchanger@gmail.com',
-    # ADD THIS LINE:
-    MAIL_SUPPRESS_SEND=False  # ← CRITICAL!
+    MAIL_SUPPRESS_SEND=False  # ← CRITICAL FOR DEBUG
 )
-
-#mail = Mail(app)
 
 # === UPLOAD CONFIG ===
 UPLOAD_FOLDER = 'uploads'
@@ -93,6 +75,11 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['RECEIPT_FOLDER'] = RECEIPT_FOLDER
 app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
+
+# === INSTANCE PATH (FOR TENANT DBs) ===
+INSTANCE_DIR = Path(app.instance_path)
+os.makedirs(INSTANCE_DIR, exist_ok=True)
+DB_GLOB = "tenant_*.db"
 
 # === EXTENSIONS ===
 db = SQLAlchemy()
@@ -146,7 +133,7 @@ class Client(db.Model):
     risk_level = db.Column(db.String(20), default='low risk')
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
+    telegram_id = db.Column(db.String(50), nullable=True)  # ← ADD THIS LINE
     id1_type = db.Column(db.String(50))
     id1_issued_by = db.Column(db.String(100))
     id1_number = db.Column(db.String(50))
@@ -1046,6 +1033,7 @@ def edit_client(client_id):
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
+        client.telegram_id = request.form.get('telegram_id', '').strip() or None
 
         for i in range(1, 4):
             prefix = f'id{i}_'

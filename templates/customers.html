@@ -55,6 +55,7 @@
         <th style="padding:10px;">ID</th>
         <th style="padding:10px;">Name</th>
         <th style="padding:10px;">Phone</th>
+        <th style="padding:10px;">Telegram</th> <!-- NEW COLUMN -->
         <th style="padding:10px;">ID Card</th>
         <th style="padding:10px;">Risk</th>
         <th style="padding:10px; width:100px;">Notes</th>
@@ -70,6 +71,19 @@
         <td style="padding:8px; font-family:monospace;">{{ data.client.id }}</td>
         <td style="padding:8px;"><strong>{{ data.client.first_name }} {{ data.client.last_name }}</strong></td>
         <td style="padding:8px;">{{ data.client.phone[:12] }}...</td>
+        
+        <!-- TELEGRAM ID COLUMN -->
+        <td style="padding:8px; text-align:center;">
+            {% if data.client.telegram_id %}
+                <a href="https://t.me/{{ data.client.telegram_id.lstrip('@') }}" target="_blank" 
+                   style="color:#0088cc; text-decoration:none; font-weight:bold;">
+                    <i class="fab fa-telegram-plane"></i> {{ data.client.telegram_id }}
+                </a>
+            {% else %}
+                <span style="color:#ccc; font-style:italic;">—</span>
+            {% endif %}
+        </td>
+
         <td style="padding:8px; font-size:11px;">
             {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
                 {% if data.client.id1_number %}
@@ -127,7 +141,7 @@
     </tr>
     {% else %}
     <tr>
-        <td colspan="12" style="padding:40px; text-align:center; color:#999; font-size:16px;">
+        <td colspan="13" style="padding:40px; text-align:center; color:#999; font-size:16px;"> <!-- 13 cols now -->
             <div style="font-size:48px; margin-bottom:15px;">No customers found</div>
         </td>
     </tr>
@@ -137,4 +151,7 @@
 <div style="margin-top:20px;">
     <a href="{{ url_for('index') }}" style="font-size:16px;">Dashboard</a>
 </div>
+
+<!-- Font Awesome for Telegram Icon -->
+<script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
 {% endblock %}

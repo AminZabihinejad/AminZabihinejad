@@ -207,6 +207,13 @@
 </div>
 
 <!-- RISK & NOTES -->
+<div class="mb-3">
+    <label for="telegram_id" class="form-label">Telegram ID (Optional)</label>
+    <input type="text" class="form-control" id="telegram_id" name="telegram_id"
+           value="{{ client.telegram_id if client else '' }}"
+           placeholder="@username or 123456789">
+    <div class="form-text">e.g. @john_doe or 123456789</div>
+</div>
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:30px;">
     <h3>Risk Assessment</h3>
     <table style="width:100%;">
