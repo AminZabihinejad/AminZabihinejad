@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file, \
+    jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from sqlalchemy import func, or_, text
@@ -35,6 +36,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
+# AFTER: from flask_mail import Mail, Message
+from telegram import Bot
+import asyncio
+import threading
+from dotenv import load_dotenv
+import os
+import re
+
+load_dotenv()
+
+
+
 # === CONFIGURATION ===
 BACKUP_MODE = "email"          # "local" | "email" | "s3" | "google_drive"
 BACKUP_LOCAL_DIR = "backups"
@@ -53,6 +66,10 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# === CUSTOM JINJA TEST (FIX regex error) ===
+@app.template_test('numeric')
+def is_numeric(value):
+    return bool(re.match(r'^\d+$', str(value).strip())) if value else False
 # === EMAIL CONFIG ===
 app.config.update(
     MAIL_SERVER='smtp.gmail.com',
@@ -141,7 +158,7 @@ class Client(db.Model):
     id1_filename = db.Column(db.String(255))
     id1_filesize = db.Column(db.Integer)
     id1_last_download = db.Column(db.DateTime)
-
+    telegram_id = db.Column(db.String(50), nullable=True)
     id2_type = db.Column(db.String(50))
     id2_issued_by = db.Column(db.String(100))
     id2_number = db.Column(db.String(50))
@@ -376,6 +393,8 @@ def backup_one_file(db_path):
     else:
         print("UNKNOWN BACKUP_MODE – nothing done")
         return None
+
+# AFTER: def backup_one_file(...)
 
 def authenticate_drive():
     try:
@@ -1420,6 +1439,79 @@ def set_fees():
     except (ValueError, TypeError):
         flash('Invalid fee values!', 'danger')
     return redirect(url_for('profile'))
+
+from telegram.error import TelegramError  # ADD THIS IMPORT
+
+@app.route('/send_telegram_receipt/<int:tx_id>', methods=['POST'])
+@login_required
+def send_telegram_receipt(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+    raw_id = client.telegram_id.strip() if client.telegram_id else ""
+
+    if not raw_id:
+        return jsonify({'error': 'No Telegram ID'}), 400
+
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        return jsonify({'error': 'Bot token missing'}), 500
+
+    # SUPPORT @username OR numeric
+    chat_id = None
+    bot = Bot(token=token)
+    if raw_id.startswith('@'):
+        try:
+            chat = bot.get_chat(raw_id)
+            chat_id = chat.id
+        except TelegramError as e:
+            app.logger.error(f"Invalid @username: {e}")
+            return jsonify({'error': 'Invalid @username'}), 400
+    else:
+        if not raw_id.isdigit():
+            return jsonify({'error': 'Invalid ID'}), 400
+        chat_id = int(raw_id)
+
+    # Generate PDF
+    pdf_path = os.path.join(app.config['RECEIPT_FOLDER'], f"{tx.tx_ref}.pdf")
+    try:
+        html = render_template('print_receipt.html',
+                               tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                               profit_cad=tx.total_fee_cad or 0,
+                               flat_fee_cad=FLAT_FEE_CAD,
+                               current_fee=round(FEE_PERCENTAGE * 100, 1),
+                               fee_percentage=FEE_PERCENTAGE,
+                               is_download=True)
+        pdf_data = pdfkit.from_string(html, False, configuration=config_pdf)
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_data)
+
+        # === ASYNC SEND (FIXED) ===
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            with open(pdf_path, 'rb') as f:
+                loop.run_until_complete(
+                    bot.send_document(
+                        chat_id=chat_id,
+                        document=f,
+                        caption=f"Receipt {tx.tx_ref}\n{EXCHANGE_NAME}",
+                        filename=f"Receipt_{tx.tx_ref}.pdf"
+                    )
+                )
+            return jsonify({'status': 'sent'}), 200
+        except TelegramError as e:
+            app.logger.error(f"Telegram send failed: {e}")
+            return jsonify({'error': 'Send failed'}), 500
+        finally:
+            loop.close()
+
+    except Exception as e:
+        app.logger.error(f"PDF error: {e}")
+        return jsonify({'error': 'PDF failed'}), 500
+    finally:
+        if os.path.exists(pdf_path):
+            try: os.remove(pdf_path)
+            except: pass
 
 if __name__ == '__main__':
     app.run(debug=True)

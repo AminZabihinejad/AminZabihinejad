@@ -57,6 +57,28 @@
     </table>
 </div>
 
+<!-- TELEGRAM ID WITH @userinfobot GUIDE -->
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>Telegram Receipt Delivery (Optional)</h3>
+    <div class="form-group">
+        <label for="telegram_id"><strong>Telegram ID:</strong></label>
+        <input type="text" name="telegram_id" id="telegram_id" 
+               value="{{ client.telegram_id if client else '' }}" 
+               placeholder="123456789" 
+               style="width:200px; padding:8px; font-size:14px;">
+        <div style="margin-top:8px; padding:12px; background:white; border:1px solid #ddd; border-radius:6px; font-size:13px;">
+            <strong>How to get your Telegram ID:</strong><br>
+            1. Open Telegram → Search <strong>@userinfobot</strong><br>
+            2. Tap the bot → Tap <strong>Start</strong><br>
+            3. Bot replies: <code>Id: 123456789</code><br>
+            4. <strong>Copy the number</strong> → Paste here<br><br>
+            <small style="color:#27ae60;">
+                <strong>Privacy:</strong> Only you see your ID. We send receipts directly.
+            </small>
+        </div>
+    </div>
+</div>
+
 <!-- 3 ID SECTIONS WITH FILE UPLOAD & LAST CHECK -->
 <div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h3>Identification Documents <small>(Optional - Add up to 3 IDs + Files)</small></h3>
@@ -207,13 +229,6 @@
 </div>
 
 <!-- RISK & NOTES -->
-<div class="mb-3">
-    <label for="telegram_id" class="form-label">Telegram ID (Optional)</label>
-    <input type="text" class="form-control" id="telegram_id" name="telegram_id"
-           value="{{ client.telegram_id if client else '' }}"
-           placeholder="@username or 123456789">
-    <div class="form-text">e.g. @john_doe or 123456789</div>
-</div>
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:30px;">
     <h3>Risk Assessment</h3>
     <table style="width:100%;">
