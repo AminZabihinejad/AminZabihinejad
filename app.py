@@ -49,7 +49,7 @@ load_dotenv()
 
 
 # === CONFIGURATION ===
-BACKUP_MODE = "email"          # "local" | "email" | "s3" | "google_drive"
+BACKUP_MODE = "google_drive"          # "local" | "email" | "s3" | "google_drive"
 BACKUP_LOCAL_DIR = "backups"
 BACKUP_EMAIL_RECIPIENT = "piggy.bank.exchanger@gmail.com"
 S3_BUCKET = "your-moneyexchange-backups"
@@ -390,8 +390,10 @@ def backup_one_file(db_path):
         return backup_email(db_path, KEY)
     elif BACKUP_MODE == "s3":
         return backup_s3(db_path, KEY)
+    elif BACKUP_MODE == "google_drive":
+        return upload_to_drive(str(db_path), FOLDER_ID)  # ← CALL GOOGLE DRIVE!
     else:
-        print("UNKNOWN BACKUP_MODE – nothing done")
+        print(f"UNKNOWN BACKUP_MODE: {BACKUP_MODE}")
         return None
 
 # AFTER: def backup_one_file(...)
