@@ -9,6 +9,66 @@
 .table th, .table td { vertical-align: middle; }
 </style>
 
+<!-- IN <head> -->
+<link id="theme" rel="stylesheet" href="{{ url_for('static', filename='css/light.css') }}">
+
+<style>
+    .theme-toggle {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 9999;
+        background: #333;
+        color: white;
+        border: none;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+        transition: all 0.3s;
+    }
+    .theme-toggle:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+    }
+</style>
+
+<!-- BEFORE </body> -->
+<button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+    🌙
+</button>
+
+<script>
+function toggleTheme() {
+    const theme = document.getElementById('theme');
+    const button = document.querySelector('.theme-toggle');
+    const isDark = theme.href.includes('dark.css');
+
+    if (isDark) {
+        theme.href = '{{ url_for('static', filename='css/light.css') }}';
+        button.innerHTML = '🌙';
+        localStorage.setItem('theme', 'light');
+    } else {
+        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
+        button.innerHTML = '☀️';
+        localStorage.setItem('theme', 'dark');
+    }
+}
+
+window.onload = function() {
+    const saved = localStorage.getItem('theme');
+    const theme = document.getElementById('theme');
+    const button = document.querySelector('.theme-toggle');
+
+    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
+        button.innerHTML = '☀️';
+    }
+}
+</script>
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -58,6 +118,43 @@
         }
     </style>
 </head>
+
+<button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+    🌙
+</button>
+
+<script>
+function toggleTheme() {
+    const theme = document.getElementById('theme');
+    const button = document.querySelector('.theme-toggle');
+    const isDark = theme.href.includes('dark.css');
+
+    if (isDark) {
+        theme.href = '{{ url_for('static', filename='css/light.css') }}';
+        button.innerHTML = '🌙';
+        localStorage.setItem('theme', 'light');
+    } else {
+        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
+        button.innerHTML = '☀️';
+        localStorage.setItem('theme', 'dark');
+    }
+}
+
+// LOAD SAVED THEME
+window.onload = function() {
+    const saved = localStorage.getItem('theme');
+    const theme = document.getElementById('theme');
+    const button = document.querySelector('.theme-toggle');
+
+    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        theme.href = '{{ url_for('static', filename='dark.css') }}';
+        button.innerHTML = '☀️';
+    }
+}
+</script>
+
+
+
 <body>
     <div class="header">
         <h1>🐷 <span style="color: #ff69b4;">Piggy Bank</span></h1>

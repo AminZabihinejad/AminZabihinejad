@@ -1,0 +1,12 @@
+/* LIGHT MODE - CLEAN DEFAULT */
+body {
+    background: #f8f9fa !important;
+    color: #333333 !important;
+}
+h1, h2, h3, h4, h5, h6 { color: #222222 !important; }
+a { color: #3498db !important; }
+input, select, textarea {
+    background: white !important;
+    color: #333 !important;
+    border: 1px solid #ccc !important;
+}
