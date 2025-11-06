@@ -14,3 +14,17 @@ google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
 boto3==1.35.39
 python-dotenv==1.0.1
+
+# === Telegram Bot (v20+ async) ===
+python-telegram-bot==20.9
+
+# === Optional but recommended extras ===
+# For faster HTTP requests in telegram bot (httpx instead of aiohttp)
+python-telegram-bot[httpx]
+
+# If you ever need rate-limiting or caching
+python-telegram-bot[rate-limiter]
+python-telegram-bot[cache]
+
+# Load .env (already have it, but keeping for clarity)
+python-dotenv==1.0.1
