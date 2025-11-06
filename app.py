@@ -11,6 +11,7 @@ import csv
 from io import StringIO, BytesIO
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import uuid
 from math import ceil
@@ -63,8 +64,22 @@ FLAT_FEE_CAD = 5.0
 
 # === FLASK APP ===
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# === ABSOLUTELY REQUIRED ON RENDER.COM ===
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
+)
+
+# Session & cookies MUST be secure over HTTPS (Render uses HTTPS)
+app.config.update(
+    SECRET_KEY=os.getenv('SECRET_KEY'),  # MUST set in Render Env Vars
+    SESSION_COOKIE_SECURE=True,       # Only send cookie over HTTPS
+    SESSION_COOKIE_SAMESITE='Lax',    # Prevents CSRF + allows redirect
+    SESSION_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SECURE=True,
+    REMEMBER_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=60)
+)
 
 # === CUSTOM JINJA TEST (FIX regex error) ===
 @app.template_test('numeric')
@@ -279,15 +294,27 @@ config_img = imgkit.config(wkhtmltoimage=WKHTMLTOIMAGE_PATH)
 # === GOOGLE DRIVE BACKUP (FIXED) ===
 # === GOOGLE DRIVE BACKUP (100% WORKING) ===
 # === GOOGLE DRIVE BACKUP (100% WORKING + DEBUG) ===
-KEY = os.getenv('DB_ENCRYPT_KEY', Fernet.generate_key().decode())
+# === FIXED ENCRYPTION KEY (NEVER NONE AGAIN) ===
+def get_encryption_key():
+    key = os.getenv('DB_ENCRYPT_KEY')
+    if not key:
+        # AUTO-GENERATE if missing (safe for local dev)
+        key = Fernet.generate_key().decode()
+        print("WARNING: DB_ENCRYPT_KEY missing! Generated temporary key (will break on restart)")
+        print(f"TEMP KEY: {key}")
+        print("ADD THIS TO RENDER.COM ENV VARS NOW!")
+    # Always return bytes
+    return key.encode()
+
+KEY = get_encryption_key()  # ← NOW 100% SAFE
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 TOKEN_FILE = 'token.pickle'
 CREDS_FILE = 'credentials.json'
 FOLDER_ID = '1h1_QuBbPgwxdD1lW5klpsQjQXuKTJ3dB'
 
-def encrypt_db(db_path, key):
+def encrypt_db(db_path, key_bytes):
     try:
-        f = Fernet(key.encode())
+        f = Fernet(key_bytes)
         with open(db_path, 'rb') as file:
             data = file.read()
         encrypted = f.encrypt(data)
@@ -603,30 +630,49 @@ def edit_exchange_name():
     else:
         flash('Name cannot be empty!', 'danger')
     return redirect(url_for('profile'))
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # If already logged in → go to dashboard
     if current_user.is_authenticated:
         return redirect(url_for('index'))
 
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+
+        if not username or not password:
+            flash('Please fill in both fields.', 'danger')
+            return render_template('login.html')
+
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
+            # === THIS IS THE KEY PART ===
             login_user(user, remember=True)
+
+            # Populate session (optional but you were using it)
             session['user_id'] = user.id
             session['is_admin'] = user.is_admin
             session['tenant_id'] = user.tenant_id
 
+            # First-time password change
             if getattr(user, 'requires_password_change', False):
                 flash('Please change your password.', 'warning')
                 return redirect(url_for('change_password', first_time=1))
 
             flash('Login successful!', 'success')
-            return redirect(url_for('index'))
 
-        flash('Invalid username or password.', 'danger')
+            # === PROPER REDIRECT WITH next SUPPORT ===
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('index')
+
+            return redirect(next_page)
+
+        else:
+            flash('Invalid username or password.', 'danger')
 
     return render_template('login.html')
 
