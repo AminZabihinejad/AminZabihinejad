@@ -72,7 +72,7 @@ app.wsgi_app = ProxyFix(
 
 # Session & cookies MUST be secure over HTTPS (Render uses HTTPS)
 app.config.update(
-    SECRET_KEY=os.getenv('SECRET_KEY'),  # MUST set in Render Env Vars
+    SECRET_KEY=os.getenv('SECRET_KEY') or 'fallback-dev-key-do-not-use-in-prod-123',  # MUST set in Render Env Vars
     SESSION_COOKIE_SECURE=True,       # Only send cookie over HTTPS
     SESSION_COOKIE_SAMESITE='Lax',    # Prevents CSRF + allows redirect
     SESSION_COOKIE_HTTPONLY=True,
