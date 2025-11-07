@@ -225,15 +225,12 @@
 <h2 style="margin:20px 0 15px 0;font-size:22px;color:#1976d2;font-weight:bold;">New Exchange</h2>
 <form method="POST" enctype="multipart/form-data"
       style="background:white;padding:20px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
-    <!-- MODE SELECTION -->
     <div style="background:#f8f9fa;padding:12px;border-radius:6px;margin-bottom:12px;text-align:center;">
         <label style="font-size:14px;font-weight:bold;margin-right:15px;">
-            <input type="radio" name="mode" value="client_fixed" checked onchange="updateLabels()">
-            Client Sells Fixed
+            <input type="radio" name="mode" value="client_fixed" checked onchange="updateAll()"> Client Sells Fixed
         </label>
         <label style="font-size:14px;font-weight:bold;">
-            <input type="radio" name="mode" value="bank_fixed" onchange="updateLabels()">
-            Client Wants Fixed
+            <input type="radio" name="mode" value="bank_fixed" onchange="updateAll()"> Client Wants Fixed
         </label>
     </div>
 
@@ -241,7 +238,7 @@
         <tr>
             <td style="padding:4px 0;width:130px;"><strong id="fixed_currency_label" style="color:black;">Client sells:</strong></td>
             <td style="padding:4px 0;">
-                <select name="fixed_currency" id="fixed_currency" required onchange="toggleSecondRate(); updateRatePreview()"
+                <select name="fixed_currency" id="fixed_currency" required onchange="updateAll()"
                         style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
@@ -262,7 +259,7 @@
         <tr>
             <td style="padding:4px 0;"><strong id="other_currency_label" style="color:black;">Gets:</strong></td>
             <td style="padding:4px 0;">
-                <select name="other_currency" id="other_currency" required onchange="toggleSecondRate(); updateRatePreview()"
+                <select name="other_currency" id="other_currency" required onchange="updateAll()"
                         style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
@@ -272,22 +269,31 @@
                 </select>
             </td>
         </tr>
+
+        <!-- MAIN RATE: Always the NON-CAD currency to CAD -->
         <tr>
-            <td style="padding:4px 0;"><strong style="color:black;">Rate <span id="from_curr_label">CAD</span> → CAD:</strong></td>
+            <td style="padding:4px 0;">
+                <strong style="color:black;">Rate <span id="rate_from_curr">USD</span> to CAD:</strong>
+            </td>
             <td style="padding:4px 0;">
                 <input type="number" name="rate_to_cad" step="0.000001" placeholder="1.400000" id="rate_to_cad" required
                        style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;"
                        oninput="updateRatePreview()">
             </td>
         </tr>
+
+        <!-- SECOND RATE: Only when BOTH are non-CAD -->
         <tr id="second_rate_row" style="display:none;">
-            <td style="padding:4px 0;"><strong style="color:black;">Rate <span id="to_curr_label">USD</span> → CAD:</strong></td>
             <td style="padding:4px 0;">
-                <input type="number" step="0.000001" placeholder="0.714286" id="rate_from_cad" disabled
+                <strong style="color:black;">Rate <span id="second_rate_curr">EUR</span> to CAD:</strong>
+            </td>
+            <td style="padding:4px 0;">
+                <input type="number" step="0.000001" placeholder="0.68" id="rate_from_cad"
                        style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;"
                        oninput="updateRatePreview()">
             </td>
         </tr>
+
         <tr>
             <td style="padding:4px 0;"></td>
             <td style="padding:4px 0;">
@@ -295,6 +301,7 @@
                                       background:#e3f2fd;padding:8px;border-radius:4px;"></div>
             </td>
         </tr>
+
         <tr>
             <td style="padding:4px 0;"><strong style="color:black;">FINTRAC:</strong></td>
             <td style="padding:4px 0;">
@@ -344,14 +351,38 @@
 let FLAT_FEE_CAD = {{ current_flat_fee|default(0.30)|tojson }};
 const fmt = n => Number(n).toFixed(2);
 
-function updateFeePreview() {
-    const flatFee = parseFloat(document.querySelector('input[name="flat_fee_cad"]').value) || FLAT_FEE_CAD;
-    FLAT_FEE_CAD = flatFee;
-    updateRatePreview();
-}
-
-function updateLabels() {
+function updateAll() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
+    const fixedCurr = document.getElementById('fixed_currency').value;
+    const otherCurr = document.getElementById('other_currency').value;
+
+    const fromCurr = mode === 'client_fixed' ? fixedCurr : otherCurr;
+    const toCurr   = mode === 'client_fixed' ? otherCurr : fixedCurr;
+
+    // Determine which currency is NOT CAD
+    let mainRateCurr = (fromCurr === 'CAD') ? toCurr : fromCurr;
+
+    document.getElementById('rate_from_curr').textContent = mainRateCurr;
+
+    // Second rate: only if BOTH are non-CAD
+    const secondRow = document.getElementById('second_rate_row');
+    const secondInput = document.getElementById('rate_from_cad');
+    if (fromCurr !== 'CAD' && toCurr !== 'CAD') {
+        const secondCurr = (mainRateCurr === fromCurr) ? toCurr : fromCurr;
+        document.getElementById('second_rate_curr').textContent = secondCurr;
+        secondRow.style.display = 'table-row';
+        secondInput.disabled = false;
+        secondInput.required = true;
+        secondInput.name = 'rate_from_cad';
+    } else {
+        secondRow.style.display = 'none';
+        secondInput.disabled = true;
+        secondInput.required = false;
+        secondInput.name = 'ignore_rate_from_cad';
+        secondInput.value = '';
+    }
+
+    // Update mode labels
     const fixedLabel = document.getElementById('fixed_currency_label');
     const amountLabel = document.getElementById('fixed_amount_label');
     const otherLabel = document.getElementById('other_currency_label');
@@ -364,31 +395,14 @@ function updateLabels() {
         amountLabel.innerHTML = 'Amount:';
         otherLabel.innerHTML = 'Client <strong style="color:black;">pays:</strong>';
     }
-    toggleSecondRate();
+
     updateRatePreview();
 }
 
-function toggleSecondRate() {
-    const fixed = document.getElementById('fixed_currency').value;
-    const other = document.getElementById('other_currency').value;
-    const row = document.getElementById('second_rate_row');
-    const input = document.getElementById('rate_from_cad');
-    const from = document.getElementById('from_curr_label');
-    const to = document.getElementById('to_curr_label');
-    from.textContent = fixed;
-    to.textContent = other;
-    if (fixed !== 'CAD' && other !== 'CAD') {
-        row.style.display = 'table-row';
-        input.disabled = false;
-        input.required = true;
-        input.name = 'rate_from_cad';
-    } else {
-        row.style.display = 'none';
-        input.disabled = true;
-        input.required = false;
-        input.name = 'ignore_rate_from_cad';
-        input.value = '';
-    }
+function updateFeePreview() {
+    const val = parseFloat(document.querySelector('input[name="flat_fee_cad"]').value);
+    if (!isNaN(val)) FLAT_FEE_CAD = val;
+    updateRatePreview();
 }
 
 function getRateToCAD() { return parseFloat(document.getElementById('rate_to_cad').value) || 0; }
@@ -409,9 +423,10 @@ function updateRatePreview() {
         document.getElementById('preview').innerHTML = '';
         return;
     }
-    const needsBoth = (fixedCurr !== 'CAD' && otherCurr !== 'CAD');
     const fromCurr = mode === 'client_fixed' ? fixedCurr : otherCurr;
     const toCurr = mode === 'client_fixed' ? otherCurr : fixedCurr;
+    const needsBoth = (fromCurr !== 'CAD' && toCurr !== 'CAD');
+
     if (needsBoth && (rateToCAD <= 0 || rateFromCAD <= 0)) {
         html = '<span style="color:#c62828;">Enter both rates!</span>';
     } else if (!needsBoth && rateToCAD <= 0) {
@@ -420,42 +435,31 @@ function updateRatePreview() {
         if (mode === 'client_fixed') {
             if (fromCurr === 'CAD') {
                 const remaining = fixedAmt - FLAT_FEE_CAD;
-                if (remaining <= 0) {
-                    html = `<span style="color:#c62828;">Amount too small! Need > $${FLAT_FEE_CAD} CAD</span>`;
-                } else {
-                    const gets = remaining / rateToCAD;
-                    html = `PAYS: <strong>${fmt(fixedAmt)} CAD</strong> → GETS: <strong>${fmt(gets)} ${toCurr}</strong>`;
-                }
+                if (remaining <= 0) html = `<span style="color:#c62828;">Amount too small! Need > $${FLAT_FEE_CAD} CAD</span>`;
+                else html = `PAYS: <strong>${fmt(fixedAmt)} CAD</strong> to GETS: <strong>${fmt(remaining / rateToCAD)} ${toCurr}</strong>`;
             } else if (toCurr === 'CAD') {
                 const grossCAD = fixedAmt * rateToCAD;
                 const netCAD = grossCAD - FLAT_FEE_CAD;
-                if (netCAD <= 0) {
-                    html = `<span style="color:#c62828;">Amount too small after fee!</span>`;
-                } else {
-                    html = `PAYS: <strong>${fmt(fixedAmt)} ${fromCurr}</strong> → GETS: <strong>${fmt(netCAD)} CAD</strong>`;
-                }
+                if (netCAD <= 0) html = `<span style="color:#c62828;">Amount too small after fee!</span>`;
+                else html = `PAYS: <strong>${fmt(fixedAmt)} ${fromCurr}</strong> to GETS: <strong>${fmt(netCAD)} CAD</strong>`;
             } else {
                 const grossCAD = fixedAmt * rateToCAD;
                 const netCAD = grossCAD - FLAT_FEE_CAD;
-                if (netCAD <= 0) {
-                    html = `<span style="color:#c62828;">Amount too small after fee!</span>`;
-                } else {
-                    const gets = netCAD / rateFromCAD;
-                    html = `PAYS: <strong>${fmt(fixedAmt)} ${fromCurr}</strong> → GETS: <strong>${fmt(gets)} ${toCurr}</strong>`;
-                }
+                if (netCAD <= 0) html = `<span style="color:#c62828;">Amount too small after fee!</span>`;
+                else html = `PAYS: <strong>${fmt(fixedAmt)} ${fromCurr}</strong> to GETS: <strong>${fmt(netCAD / rateFromCAD)} ${toCurr}</strong>`;
             }
         } else {
             if (toCurr === 'CAD') {
                 const pays = (fixedAmt + FLAT_FEE_CAD) / rateToCAD;
-                html = `PAYS: <strong>${fmt(pays)} ${fromCurr}</strong> → GETS: <strong>${fmt(fixedAmt)} CAD</strong>`;
+                html = `PAYS: <strong>${fmt(pays)} ${fromCurr}</strong> to GETS: <strong>${fmt(fixedAmt)} CAD</strong>`;
             } else if (fromCurr === 'CAD') {
                 const pays = fixedAmt * rateToCAD + FLAT_FEE_CAD;
-                html = `PAYS: <strong>${fmt(pays)} CAD</strong> → GETS: <strong>${fmt(fixedAmt)} ${toCurr}</strong>`;
+                html = `PAYS: <strong>${fmt(pays)} CAD</strong> to GETS: <strong>${fmt(fixedAmt)} ${toCurr}</strong>`;
             } else {
                 const grossCAD = fixedAmt * rateFromCAD;
                 const totalCAD = grossCAD + FLAT_FEE_CAD;
                 const pays = totalCAD / rateToCAD;
-                html = `PAYS: <strong>${fmt(pays)} ${fromCurr}</strong> → GETS: <strong>${fmt(fixedAmt)} ${toCurr}</strong>`;
+                html = `PAYS: <strong>${fmt(pays)} ${fromCurr}</strong> to GETS: <strong>${fmt(fixedAmt)} ${toCurr}</strong>`;
             }
         }
     }
@@ -528,9 +532,7 @@ Click CONFIRM to proceed
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    updateLabels();
-    toggleSecondRate();
-    updateRatePreview();
+    updateAll();
     document.getElementById('fixed_amount')?.focus();
 });
 </script>

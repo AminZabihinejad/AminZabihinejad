@@ -820,20 +820,19 @@ def index():
     if request.method == 'POST' and 'update_fees' in request.form:
         try:
             FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-            FLAT_FEE_CAD   = float(request.form['flat_fee_cad'])
+            FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
             flash(f'Fees updated: {FEE_PERCENTAGE*100:.1f}% + ${FLAT_FEE_CAD:.2f} CAD', 'success')
         except ValueError:
             flash('Invalid fee values!', 'danger')
         return redirect(url_for('index'))
 
-    # === YOUR EXISTING TRANSACTION CODE (keep 100% unchanged) ===
+    # === REQUIRE CLIENT ===
     if request.method == 'POST' and not session.get('selected_client_id'):
         flash('Select client first!', 'danger')
         return redirect(url_for('customers'))
 
+    # === CREATE TRANSACTION ===
     if request.method == 'POST':
-        # ... [ALL YOUR TRANSACTION CODE EXACTLY AS-IS] ...
-        # (don’t change a single line inside here – it’s perfect)
         mode = request.form['mode']
         fixed_currency = request.form['fixed_currency']
         fixed_amount = float(request.form['fixed_amount'])
@@ -841,60 +840,78 @@ def index():
         notes = request.form.get('notes', '')
         is_fintrac = 'is_fintrac' in request.form
         status = request.form['status']
+
         rate_to_cad = float(request.form.get('rate_to_cad') or 0)
         if rate_to_cad <= 0:
             flash('Rate required!', 'danger')
             return redirect(url_for('index'))
+
         if fixed_currency == other_currency:
             flash('Same currency!', 'danger')
             return redirect(url_for('index'))
 
-        exchange_rate = rate_to_cad
         tx_ref = generate_tx_ref()
 
+        # Determine actual FROM and TO currencies
         if mode == 'client_fixed':
             from_currency = fixed_currency
             to_currency = other_currency
             from_amount = fixed_amount
-            if from_currency == 'CAD':
-                remaining = fixed_amount - FLAT_FEE_CAD
-                if remaining <= 0:
-                    flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
-                    return redirect(url_for('index'))
-                to_amount = remaining / exchange_rate
-            elif to_currency == 'CAD':
-                gross = fixed_amount * exchange_rate
-                to_amount = gross - FLAT_FEE_CAD
-                if to_amount <= 0:
-                    flash('Amount too small after fee!', 'danger')
-                    return redirect(url_for('index'))
-            else:
-                gross = fixed_amount * rate_to_cad
-                gross -= FLAT_FEE_CAD
-                to_amount = gross / rate_to_cad
         else:
             from_currency = other_currency
             to_currency = fixed_currency
             to_amount = fixed_amount
-            if to_currency == 'CAD':
-                from_amount = (fixed_amount + FLAT_FEE_CAD) / exchange_rate
-            elif from_currency == 'CAD':
-                from_amount = fixed_amount * exchange_rate + FLAT_FEE_CAD
-            else:
-                gross = fixed_amount * rate_to_cad
-                gross -= FLAT_FEE_CAD
-                to_amount = gross / rate_to_cad
 
+        # === CASE 1: CAD involved (one side is CAD) ===
+        if from_currency == 'CAD' or to_currency == 'CAD':
+            if from_currency == 'CAD':
+                # CAD → X
+                remaining = from_amount - FLAT_FEE_CAD
+                if remaining <= 0:
+                    flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
+                    return redirect(url_for('index'))
+                to_amount = remaining / rate_to_cad
+            else:
+                # X → CAD
+                gross_cad = from_amount * rate_to_cad
+                to_amount = gross_cad - FLAT_FEE_CAD
+                if to_amount <= 0:
+                    flash('Amount too small after fee!', 'danger')
+                    return redirect(url_for('index'))
+
+        # === CASE 2: NO CAD (e.g. USD → EUR) ===
+        else:
+            rate_from_cad = float(request.form.get('rate_from_cad') or 0)
+            if rate_from_cad <= 0:
+                flash('Second rate required for non-CAD pairs!', 'danger')
+                return redirect(url_for('index'))
+
+            if mode == 'client_fixed':
+                # Client sells USD → gets EUR
+                gross_cad = from_amount * rate_to_cad        # USD → CAD
+                net_cad = gross_cad - FLAT_FEE_CAD
+                if net_cad <= 0:
+                    flash('Amount too small after fee!', 'danger')
+                    return redirect(url_for('index'))
+                to_amount = net_cad / rate_from_cad           # CAD → EUR (correct!)
+            else:
+                # Client wants EUR → pays USD
+                gross_cad = to_amount * rate_from_cad         # EUR → CAD
+                total_cad = gross_cad + FLAT_FEE_CAD
+                from_amount = total_cad / rate_to_cad         # CAD → USD
+
+        # === PROFIT CALCULATION ===
         profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
         total_fee = round(profit_cad, 2)
 
+        # === SAVE TRANSACTION ===
         new_tx = Transaction(
             tx_ref=tx_ref,
             from_currency=from_currency,
             to_currency=to_currency,
-            from_amount=from_amount,
-            to_amount=to_amount,
-            exchange_rate=exchange_rate,
+            from_amount=round(from_amount, 6),
+            to_amount=round(to_amount, 6),
+            exchange_rate=rate_to_cad,
             notes=f"{notes} (Profit: ${total_fee} CAD)" if notes else f"Profit: ${total_fee} CAD",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
@@ -905,10 +922,11 @@ def index():
         )
         db.session.add(new_tx)
         db.session.commit()
+
         flash(f'Tx {tx_ref} created!', 'success')
         return redirect(url_for('index'))
 
-    # === LOAD DATA ===
+    # === LOAD DATA FOR RENDER ===
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
     total_volume_usd = 0
     led_color = '#00FF00'
@@ -921,18 +939,21 @@ def index():
         total_volume_usd = round(total_volume_usd, 2)
 
     balances = get_balances()
-    open_transactions = Transaction.query.filter_by(status='pending', tenant_id=session.get('tenant_id')).all()
+    open_transactions = Transaction.query.filter_by(
+        status='pending',
+        tenant_id=session.get('tenant_id')
+    ).all()
 
-    # === FINAL RETURN – THESE 3 LINES ARE THE ONLY ONES THAT MATTER FOR THE BOXES ===
-    return render_template('index.html',
+    return render_template(
+        'index.html',
         client=client,
         balances=balances,
         open_transactions=open_transactions,
         total_volume_usd=total_volume_usd,
         led_color=led_color,
-        fee_percentage=round(FEE_PERCENTAGE * 100, 1),   # ← shows in % box
-        flat_fee_cad=round(FLAT_FEE_CAD, 2),             # ← shows in flat fee box
-        current_flat_fee=round(FLAT_FEE_CAD, 2),         # ← used by JavaScript
+        fee_percentage=round(FEE_PERCENTAGE * 100, 1),
+        flat_fee_cad=round(FLAT_FEE_CAD, 2),
+        current_flat_fee=round(FLAT_FEE_CAD, 2),
     )
 
 @app.route('/profile')
