@@ -1173,57 +1173,46 @@ def edit_transaction(tx_id):
 
     if request.method == 'POST':
         try:
-            # === INPUTS ===
             from_amount = float(request.form['from_amount'])
-            rate_from_cad = float(request.form['rate_from_cad'])  # 1 FROM = X CAD
-            rate_to_cad = float(request.form['rate_to_cad'])      # 1 TO = Y CAD
+            rate_from_cad = float(request.form['rate_from_cad'])
+            rate_to_cad = float(request.form['rate_to_cad'])
+            status = request.form['status']
             notes = request.form.get('notes', '')
             is_fintrac = 'is_fintrac' in request.form
 
-            # === VALIDATION ===
-            if from_amount <= 0:
-                flash('Amount must be > 0!', 'danger')
-                return redirect(url_for('edit_transaction', tx_id=tx_id))
-
-            # === CASE 1: CAD INVOLVED ===
-            if tx.from_currency == 'CAD' or tx.to_currency == 'CAD':
-                if tx.from_currency == 'CAD':
-                    # CAD → X
-                    remaining = from_amount - FLAT_FEE_CAD
-                    if remaining <= 0:
-                        flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
-                        return redirect(url_for('edit_transaction', tx_id=tx_id))
-                    to_amount = remaining / rate_to_cad
-                else:
-                    # X → CAD
-                    gross_cad = from_amount * rate_from_cad
-                    to_amount = gross_cad - FLAT_FEE_CAD
-                    if to_amount <= 0:
-                        flash('Amount too small after fee!', 'danger')
-                        return redirect(url_for('edit_transaction', tx_id=tx_id))
+            # === RECALCULATE TO_AMOUNT ===
+            if tx.from_currency == 'CAD':
+                remaining = from_amount - FLAT_FEE_CAD
+                to_amount = remaining / rate_to_cad if remaining > 0 else 0
+            elif tx.to_currency == 'CAD':
+                gross_cad = from_amount * rate_from_cad
+                to_amount = gross_cad - FLAT_FEE_CAD
             else:
-                # === CASE 2: NO CAD (e.g. USD → EUR) ===
                 gross_cad = from_amount * rate_from_cad
                 net_cad = gross_cad - FLAT_FEE_CAD
-                if net_cad <= 0:
-                    flash('Amount too small after fee!', 'danger')
-                    return redirect(url_for('edit_transaction', tx_id=tx_id))
-                to_amount = net_cad / rate_to_cad
+                to_amount = net_cad / rate_to_cad if net_cad > 0 else 0
 
-            # === PROFIT ===
-            profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
-            total_fee = round(profit_cad, 2)
-
-            # === INTERNAL EXCHANGE RATE (FROM → TO) ===
             exchange_rate = to_amount / from_amount if from_amount > 0 else 0
+            profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
 
             # === UPDATE DB ===
             tx.from_amount = round(from_amount, 6)
             tx.to_amount = round(to_amount, 6)
             tx.exchange_rate = round(exchange_rate, 6)
+            tx.status = status
             tx.notes = notes
             tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
-            tx.total_fee_cad = total_fee
+            tx.total_fee_cad = round(profit_cad, 2)
+
+            # === UPLOAD RECEIPT ===
+            if 'receipt_file' in request.files:
+                file = request.files['receipt_file']
+                if file and file.filename.endswith('.pdf'):
+                    filename = secure_filename(f"receipt_{tx.tx_ref}.pdf")
+                    filepath = os.path.join('receipts', filename)
+                    os.makedirs('receipts', exist_ok=True)
+                    file.save(filepath)
+                    tx.receipt_filename = filename
 
             db.session.commit()
             flash(f'Tx #{tx.tx_ref} updated!', 'success')
@@ -1232,7 +1221,7 @@ def edit_transaction(tx_id):
 
         return redirect(url_for('transactions'))
 
-    # === GET: PRE-CALCULATE CURRENT RATES ===
+    # GET: pre-calculate rates
     gross_cad = tx.from_amount * tx.exchange_rate
     rate_from_cad = gross_cad / tx.from_amount if tx.from_amount else 0
     net_cad = gross_cad - FLAT_FEE_CAD

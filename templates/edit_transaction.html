@@ -9,7 +9,7 @@
        <small>Phone: {{ tx.client.phone }} | {{ tx.client.city }}, {{ tx.client.province }}</small></p>
 </div>
 
-<form method="POST" id="edit-form">
+<form method="POST" id="edit-form" enctype="multipart/form-data">
     <table style="width:100%; font-size:14px; border-collapse:collapse;">
         <!-- FROM CURRENCY -->
         <tr>
@@ -62,7 +62,7 @@
             </td>
         </tr>
 
-        <!-- INTERNAL RATE: AUTO-CALCULATED, NOT EDITABLE -->
+        <!-- INTERNAL RATE: AUTO-CALCULATED -->
         <tr style="background:#f8f9fa;">
             <td style="padding:8px; font-weight:bold; color:#7f8c8d;">Internal Rate ({{ tx.from_currency }} to {{ tx.to_currency }}):</td>
             <td style="padding:8px;">
@@ -73,7 +73,7 @@
             </td>
         </tr>
 
-        <!-- TO AMOUNT: LIVE DISPLAY -->
+        <!-- TO AMOUNT: LIVE -->
         <tr>
             <td style="padding:8px; font-weight:bold;">To Amount:</td>
             <td style="padding:8px;">
@@ -81,6 +81,31 @@
                     {{ "%.2f"|format(tx.to_amount) }}
                 </span>
                 <span style="margin-left:10px; color:#27ae60; font-weight:bold;">{{ tx.to_currency }}</span>
+            </td>
+        </tr>
+
+        <!-- STATUS (EDITABLE) -->
+        <tr><td colspan="2"><hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;"></td></tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Status:</td>
+            <td style="padding:8px;">
+                <select name="status" style="padding:6px; font-size:14px; width:180px;">
+                    <option value="completed" {% if tx.status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="cancelled" {% if tx.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+            </td>
+        </tr>
+
+        <!-- RECEIPT UPLOAD -->
+        <tr>
+            <td style="padding:8px; font-weight:bold; vertical-align:top;">Upload Receipt (PDF):</td>
+            <td style="padding:8px;">
+                <input type="file" name="receipt_file" accept=".pdf" style="padding:6px; font-size:14px;">
+                <br><small style="color:#7f8c8d;">Max 5MB. Replaces existing receipt.</small>
+                {% if tx.receipt_filename %}
+                    <br><a href="{{ url_for('download_receipt', tx_id=tx.id) }}" style="color:#27ae60; font-weight:bold; font-size:13px;">Current PDF</a>
+                {% endif %}
             </td>
         </tr>
 
@@ -110,18 +135,6 @@
                     <input type="checkbox" name="is_fintrac" {% if tx.is_fintrac %}checked{% endif %}>
                     <span style="color:#e74c3c; font-weight:bold;">Report to FINTRAC ($10,000+ CAD)</span>
                 </label>
-            </td>
-        </tr>
-
-        <!-- RECEIPT -->
-        <tr>
-            <td style="padding:8px; font-weight:bold;">Receipt:</td>
-            <td style="padding:8px;">
-                {% if tx.receipt_filename %}
-                    <a href="{{ url_for('download_receipt', tx_id=tx.id) }}" style="color:#27ae60; font-weight:bold;">PDF Available</a>
-                {% else %}
-                    <span style="color:#999;">—</span>
-                {% endif %}
             </td>
         </tr>
 
@@ -190,21 +203,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Update UI
         toDisplay.textContent = to.toFixed(2);
         exchangeRateDisplay.textContent = exchangeRate.toFixed(6);
         exchangeRateInput.value = exchangeRate.toFixed(6);
         profitDisplay.textContent = profit.toFixed(2);
     }
 
-    // Only update internal rate when Rate 1 or Rate 2 changes
+    // Update internal rate only when Rate 1 or Rate 2 changes
     [rateFrom, rateTo].forEach(el => {
         if (el && !el.readOnly) {
             el.addEventListener('input', updateAll);
         }
     });
 
-    // From Amount only scales To Amount (using current internal rate)
+    // From Amount only scales To Amount
     fromAmount.addEventListener('input', function() {
         const from = parseFloat(fromAmount.value) || 0;
         const currentRate = parseFloat(exchangeRateInput.value) || 0;
@@ -212,7 +224,6 @@ document.addEventListener('DOMContentLoaded', function() {
         toDisplay.textContent = to.toFixed(2);
     });
 
-    // Initial calculation
     updateAll();
 });
 </script>
