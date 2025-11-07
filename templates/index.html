@@ -1,104 +1,164 @@
 {% extends "base.html" %}
 {% block title %}Piggy Bank - Overview{% endblock %}
 {% block content %}
-{% with messages = get_flashed_messages() %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-        <div style="background:#e8f5e8;color:#2e7d32;padding:10px;border-radius:6px;margin:10px 0;text-align:center;font-weight:bold;border:2px solid #4caf50;font-size:14px;">
-            {{ messages[0] }}
-        </div>
+        {% for category, message in messages %}
+            <div style="background:{% if category == 'success' %}#e8f5e8{% else %}#ffebee{% endif %};
+                        color:{% if category == 'success' %}#2e7d32{% else %}#c62828{% endif %};
+                        padding:12px;border-radius:8px;margin:15px 0;text-align:center;font-weight:bold;
+                        border:2px solid {% if category == 'success' %}#4caf50{% else %}#f44336{% endif %};
+                        font-size:15px;">
+                {{ message }}
+            </div>
+        {% endfor %}
     {% endif %}
 {% endwith %}
 
-<h1 style="margin:15px 0 10px 0;font-size:24px;">Current Balances</h1>
-<div class="balances" style="background:#f8f9fa;padding:12px;border-radius:8px;margin:0 0 12px 0;">
+<h1 style="margin:15px 0 10px 0;font-size:26px;color:#1976d2;font-weight:bold;">Current Balances</h1>
+<div class="balances" style="background:#f8f9fa;padding:15px;border-radius:10px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
     {% if balances %}
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;">
             {% for currency, amount in balances.items() %}
-                <div style="background:{% if amount >= 0 %}#e8f5e8{% else %}#ffebee{% endif %};padding:8px 6px;border-radius:6px;text-align:center;border-left:4px solid {% if amount >= 0 %}#4caf50{% else %}#f44336{% endif %};">
-                    <h3 style="margin:0 0 2px 0;font-size:20px;color:{% if amount >= 0 %}#2e7d32{% else %}#c62828{% endif %};">{{ "%.2f"|format(amount) }}</h3>
-                    <p style="margin:0;font-weight:bold;text-transform:uppercase;font-size:12px;">{{ currency }}</p>
+                <div style="background:{% if amount >= 0 %}#e8f5e8{% else %}#ffebee{% endif %};
+                            padding:12px;border-radius:8px;text-align:center;
+                            border-left:5px solid {% if amount >= 0 %}#4caf50{% else %}#f44336{% endif %};
+                            box-shadow:0 1px 4px rgba(0,0,0,0.1);">
+                    <h3 style="margin:0 0 4px 0;font-size:24px;color:{% if amount >= 0 %}#2e7d32{% else %}#c62828{% endif %};font-weight:bold;">
+                        {{ "%.2f"|format(amount) }}
+                    </h3>
+                    <p style="margin:0;font-weight:bold;text-transform:uppercase;font-size:13px;letter-spacing:1px;color:#555;">
+                        {{ currency }}
+                    </p>
                 </div>
             {% endfor %}
         </div>
     {% else %}
-        <p style="text-align:center;color:#666;font-size:14px;margin:0;">No transactions yet!</p>
+        <p style="text-align:center;color:#888;font-style:italic;font-size:15px;">No transactions yet. Start exchanging!</p>
     {% endif %}
 </div>
 
 <!-- FEE SETTINGS -->
-<div style="background:#e8f7ff;padding:12px;border-radius:8px;margin:0 0 12px 0;border-left:4px solid #2196f3;">
+<div style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);padding:15px;border-radius:10px;margin-bottom:15px;
+            border-left:5px solid #2196f3;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
     <form method="POST">
         <input type="hidden" name="update_fees" value="1">
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-            <div>
-                <label style="font-weight:bold;color:#1976d2;font-size:13px;">Fee %:</label>
-                <input type="number" name="fee_percentage" value="{{ fee_percentage }}" step="0.1" min="0" max="10"
-                       style="width:60px;padding:4px;margin-left:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;"
+        <div style="display:flex;gap:15px;align-items:center;flex-wrap:wrap;font-size:15px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <label style="font-weight:bold;color:#1976d2;min-width:80px;">Fee %:</label>
+                <input type="number" name="fee_percentage"
+                       value="{{ fee_percentage|default(2.9) }}"
+                       step="0.1" min="0" max="10"
+                       placeholder="2.9"
+                       style="width:80px;padding:8px;font-size:15px;border:2px solid #90caf9;border-radius:6px;text-align:center;font-weight:bold;"
                        onchange="updateFeePreview()">
             </div>
-            <div>
-                <label style="font-weight:bold;color:#1976d2;font-size:13px;">Flat Fee CAD:</label>
-                <input type="number" name="flat_fee_cad" value="{{ flat_fee_cad }}" step="0.01" min="0" max="50"
-                       style="width:70px;padding:4px;margin-left:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;"
+            <div style="display:flex;align-items:center;gap:8px;">
+                <label style="font-weight:bold;color:#1976d2;min-width:100px;">Flat Fee CAD:</label>
+                <input type="number" name="flat_fee_cad"
+                       value="{{ flat_fee_cad|default(0.30) }}"
+                       step="0.01" min="0" max="50"
+                       placeholder="0.30"
+                       style="width:90px;padding:8px;font-size:15px;border:2px solid #90caf9;border-radius:6px;text-align:center;font-weight:bold;"
                        onchange="updateFeePreview()">
             </div>
-            <button type="submit" style="padding:6px 16px;background:#2196f3;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;font-size:13px;">UPDATE FEES</button>
-            <div style="font-size:12px;color:#666;font-weight:bold;min-width:120px;">Current: {{ fee_percentage }}% + ${{ flat_fee_cad }} CAD</div>
+            <button type="submit"
+                    style="padding:10px 24px;background:#1976d2;color:white;border:none;border-radius:6px;
+                           font-weight:bold;cursor:pointer;font-size:15px;box-shadow:0 2px 6px rgba(0,0,0,0.2);">
+                UPDATE FEES
+            </button>
+            <div style="font-weight:bold;color:#0d47a1;font-size:15px;">
+                Current: <span style="color:#1976d2;">{{ fee_percentage|default(2.9) }}%</span> +
+                         <span style="color:#1976d2;">${{ flat_fee_cad|default(0.30) }} CAD</span>
+            </div>
         </div>
     </form>
 </div>
 
 <!-- CLIENT SELECTION -->
-<div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:12px;border-radius:8px;margin:0 0 12px 0;color:white;">
+<div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:16px;border-radius:10px;
+            margin-bottom:15px;color:white;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
     {% if client %}
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
             <div>
-                <strong style="font-size:16px;color:white;">{{ client.first_name }} {{ client.last_name }}</strong><br>
-                <small style="opacity:0.95;font-size:12px;color:white;">{{ client.phone|default('—') }} | {{ client.apartment|default('') }} {{ client.civic_number }} {{ client.street }}</small>
+                <strong style="font-size:18px;color:#fff;">{{ client.first_name }} {{ client.last_name }}</strong><br>
+                <small style="opacity:0.9;font-size:13px;">
+                    {{ client.phone|default('—') }} |
+                    {{ client.apartment|default('') }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}
+                </small>
             </div>
-            <div style="display:flex;gap:6px;">
-                <a href="{{ url_for('customers') }}" style="background:rgba(255,255,255,0.2);padding:5px 10px;border-radius:4px;color:white;text-decoration:none;font-size:12px;">Change</a>
-                <a href="{{ url_for('edit_client', client_id=client.id) }}" style="background:rgba(255,255,255,0.2);padding:5px 10px;border-radius:4px;color:white;text-decoration:none;font-size:12px;">Edit</a>
+            <div style="display:flex;gap:8px;">
+                <a href="{{ url_for('customers') }}"
+                   style="background:rgba(255,255,255,0.25);padding:8px 14px;border-radius:6px;color:white;
+                          text-decoration:none;font-weight:bold;font-size:13px;">Change</a>
+                <a href="{{ url_for('edit_client', client_id=client.id) }}"
+                   style="background:rgba(255,255,255,0.25);padding:8px 14px;border-radius:6px;color:white;
+                          text-decoration:none;font-weight:bold;font-size:13px;">Edit</a>
             </div>
         </div>
     {% else %}
         <div style="text-align:center;">
-            <form method="GET" action="{{ url_for('customers') }}" style="display:inline-flex;gap:6px;max-width:350px;margin:0 auto 8px auto;">
-                <input type="text" name="search" placeholder="Search customer..." style="flex:1;padding:8px 12px;border:none;border-radius:20px;font-size:14px;color:black;">
-                <button type="submit" style="padding:8px 14px;background:#4caf50;color:white;border:none;border-radius:20px;font-weight:bold;cursor:pointer;font-size:14px;">GO</button>
+            <p style="margin:0 0 12px 0;font-size:16px;font-weight:bold;">No client selected</p>
+            <form method="GET" action="{{ url_for('customers') }}" style="display:inline-block;">
+                <input type="text" name="search" placeholder="Search customer..."
+                       style="padding:10px 16px;border:none;border-radius:30px;font-size:15px;width:280px;
+                              max-width:100%;box-shadow:inset 0 2px 6px rgba(0,0,0,0.1);">
+                <button type="submit"
+                        style="margin-left:8px;padding:10px 20px;background:#4caf50;color:white;
+                               border:none;border-radius:30px;font-weight:bold;cursor:pointer;">GO</button>
             </form>
-            <br><a href="{{ url_for('customers') }}" style="color:#ffd700;font-weight:bold;font-size:14px;text-decoration:none;">+ ADD NEW CUSTOMER</a>
+            <br><br>
+            <a href="{{ url_for('customers') }}"
+               style="color:#ffd700;font-weight:bold;font-size:15px;text-decoration:none;
+                      background:rgba(255,255,255,0.2);padding:8px 16px;border-radius:30px;">
+                + ADD NEW CUSTOMER
+            </a>
         </div>
     {% endif %}
 </div>
 
-<!-- CLIENT NOTES + RISK -->
+<!-- CLIENT NOTES + RISK + VOLUME -->
 {% if client %}
-<div style="background:#fff3cd;padding:12px;border-radius:8px;margin:0 0 12px 0;border-left:4px solid #ffc107;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+<div style="background:#fff8e1;padding:15px;border-radius:10px;margin-bottom:15px;
+            border-left:5px solid #ffc107;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;">
         <div style="flex:1;">
-            <strong style="font-size:14px;">Notes:</strong>
+            <strong style="font-size:15px;color:#e65100;">Notes:</strong>
             {% if client.notes %}
-                <div style="background:#f9f9f9;padding:6px;border-radius:4px;margin-top:4px;font-size:12px;max-height:50px;overflow-y:auto;border-left:3px solid #f39c12;">
+                <div style="background:#fffde7;padding:10px;border-radius:6px;margin-top:6px;
+                            font-size:13px;border-left:4px solid #ff8f00;max-height:60px;overflow-y:auto;">
                     {{ client.notes }}
                 </div>
             {% else %}
-                <span style="color:#666;font-size:12px;">— No notes —</span>
+                <em style="color:#999;font-size:13px;">— No notes —</em>
             {% endif %}
         </div>
-        <div style="text-align:center;min-width:90px;">
-            <div style="font-size:12px;font-weight:bold;margin-bottom:3px;">Risk Level</div>
+        <div style="text-align:center;">
+            <div style="font-size:13px;font-weight:bold;color:#555;margin-bottom:5px;">Risk Level</div>
             {% if client.risk_level == 'low risk' %}
-                <div style="width:40px;height:40px;background:#4caf50;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:9px;margin:0 auto;">LOW</div>
+                <div style="width:50px;height:50px;background:#4caf50;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">LOW</div>
             {% elif client.risk_level == 'medium risk' %}
-                <div style="width:40px;height:40px;background:#ff9800;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:9px;margin:0 auto;">MED</div>
+                <div style="width:50px;height:50px;background:#ff9800;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">MED</div>
             {% elif client.risk_level == 'high risk' %}
-                <div style="width:40px;height:40px;background:#f44336;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:9px;margin:0 auto;">HIGH</div>
+                <div style="width:50px;height:50px;background:#f44336;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">HIGH</div>
             {% else %}
-                <div style="width:40px;height:40px;background:#9e9e9e;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:9px;margin:0 auto;">HOLD</div>
+                <div style="width:50px;height:50px;background:#9e9e9e;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">HOLD</div>
             {% endif %}
             {% if total_volume_usd %}
-                <div style="font-size:10px;opacity:0.8;">Vol: ${{ total_volume_usd }}</div>
+                <div style="font-size:12px;color:#555;font-weight:bold;">Vol: ${{ total_volume_usd }}</div>
             {% endif %}
         </div>
     </div>
@@ -107,8 +167,11 @@
 
 <!-- OPEN TRANSACTIONS -->
 {% if open_transactions %}
-<div style="background:#e3f2fd;padding:12px;border-radius:8px;margin:0 0 12px 0;">
-    <h3 style="margin:0 0 10px 0;font-size:18px;">Open Transactions ({{ open_transactions|length }})</h3>
+<div style="background:#e3f2fd;padding:15px;border-radius:10px;margin-bottom:15px;
+            border-left:5px solid #2196f3;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+    <h3 style="margin:0 0 12px 0;font-size:19px;color:#1976d2;font-weight:bold;">
+        Open Transactions ({{ open_transactions|length }})
+    </h3>
     <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
             <thead>
@@ -116,7 +179,7 @@
                     <th style="padding:6px 4px;text-align:left;">ID</th>
                     <th style="padding:6px 4px;text-align:left;">Client</th>
                     <th style="padding:6px 4px;text-align:center;">USD</th>
-                    <th style="padding:6px 4px;text-align:center;">{{ other_currency }}</th>
+                    <th style="padding:6px 4px;text-align:center;">{{ other_currency|default('Other') }}</th>
                     <th style="padding:6px 4px;text-align:center;">Status</th>
                     <th style="padding:6px 4px;text-align:center;">Action</th>
                 </tr>
@@ -136,7 +199,7 @@
                         ${{ "%.2f"|format(tx.to_amount if tx.to_currency == 'USD' else tx.from_amount) }}
                     </td>
                     <td style="padding:6px 4px;text-align:center;font-weight:bold;font-size:12px;">
-                        {{ other_currency }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}
+                        {{ other_currency|default('—') }}${{ "%.2f"|format(tx.from_amount if tx.from_currency == other_currency else tx.to_amount) }}
                     </td>
                     <td style="padding:6px 4px;text-align:center;">
                         <span style="color:#f44336;font-weight:bold;font-size:12px;">OPEN</span>
@@ -144,7 +207,11 @@
                     <td style="padding:6px 4px;text-align:center;">
                         <form method="POST" action="{{ url_for('update_status', tx_id=tx.id) }}" style="display:inline;">
                             <input type="hidden" name="status" value="closed">
-                            <button type="submit" style="padding:3px 10px;background:#4caf50;color:white;border:none;border-radius:3px;font-weight:bold;cursor:pointer;font-size:11px;">CLOSE</button>
+                            <button type="submit"
+                                    style="padding:3px 10px;background:#4caf50;color:white;border:none;
+                                           border-radius:3px;font-weight:bold;cursor:pointer;font-size:11px;">
+                                CLOSE
+                            </button>
                         </form>
                     </td>
                 </tr>
@@ -155,16 +222,17 @@
 </div>
 {% endif %}
 
-<h2 style="margin:15px 0 12px 0;font-size:20px;">New Exchange</h2>
-<form method="POST" enctype="multipart/form-data" style="background:white;padding:15px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+<h2 style="margin:20px 0 15px 0;font-size:22px;color:#1976d2;font-weight:bold;">New Exchange</h2>
+<form method="POST" enctype="multipart/form-data"
+      style="background:white;padding:20px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
     <!-- MODE SELECTION -->
     <div style="background:#f8f9fa;padding:12px;border-radius:6px;margin-bottom:12px;text-align:center;">
         <label style="font-size:14px;font-weight:bold;margin-right:15px;">
-            <input type="radio" name="mode" value="client_fixed" checked onchange="updateLabels()"> 
+            <input type="radio" name="mode" value="client_fixed" checked onchange="updateLabels()">
             Client Sells Fixed
         </label>
         <label style="font-size:14px;font-weight:bold;">
-            <input type="radio" name="mode" value="bank_fixed" onchange="updateLabels()"> 
+            <input type="radio" name="mode" value="bank_fixed" onchange="updateLabels()">
             Client Wants Fixed
         </label>
     </div>
@@ -173,7 +241,8 @@
         <tr>
             <td style="padding:4px 0;width:130px;"><strong id="fixed_currency_label" style="color:black;">Client sells:</strong></td>
             <td style="padding:4px 0;">
-                <select name="fixed_currency" id="fixed_currency" required onchange="toggleSecondRate(); updateRatePreview()" style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
+                <select name="fixed_currency" id="fixed_currency" required onchange="toggleSecondRate(); updateRatePreview()"
+                        style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
                     <option value="GBP">GBP</option>
@@ -185,15 +254,16 @@
         <tr>
             <td style="padding:4px 0;"><strong id="fixed_amount_label" style="color:black;">Amount:</strong></td>
             <td style="padding:4px 0;">
-                <input type="number" name="fixed_amount" step="0.01" min="5.01" placeholder="100.00" required 
-                       id="fixed_amount" style="padding:6px 8px;font-size:15px;border-radius:4px;border:1px solid #ddd;width:150px;color:black;" 
+                <input type="number" name="fixed_amount" step="0.01" min="5.01" placeholder="100.00" required
+                       id="fixed_amount" style="padding:6px 8px;font-size:15px;border-radius:4px;border:1px solid #ddd;width:150px;color:black;"
                        oninput="updateRatePreview()">
             </td>
         </tr>
         <tr>
             <td style="padding:4px 0;"><strong id="other_currency_label" style="color:black;">Gets:</strong></td>
             <td style="padding:4px 0;">
-                <select name="other_currency" id="other_currency" required onchange="toggleSecondRate(); updateRatePreview()" style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
+                <select name="other_currency" id="other_currency" required onchange="toggleSecondRate(); updateRatePreview()"
+                        style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:150px;color:black;">
                     <option value="USD">USD</option>
                     <option value="EUR">EUR</option>
                     <option value="GBP">GBP</option>
@@ -202,36 +272,29 @@
                 </select>
             </td>
         </tr>
-
-        <!-- PRIMARY RATE: 1 FIXED → CAD -->
         <tr>
             <td style="padding:4px 0;"><strong style="color:black;">Rate <span id="from_curr_label">CAD</span> → CAD:</strong></td>
             <td style="padding:4px 0;">
-                <input type="number" name="rate_to_cad" step="0.000001" placeholder="1.400000" id="rate_to_cad" required 
-                       style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;" 
+                <input type="number" name="rate_to_cad" step="0.000001" placeholder="1.400000" id="rate_to_cad" required
+                       style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;"
                        oninput="updateRatePreview()">
             </td>
         </tr>
-
-        <!-- SECOND RATE: 1 OTHER → CAD (only for non-CAD pairs) -->
         <tr id="second_rate_row" style="display:none;">
             <td style="padding:4px 0;"><strong style="color:black;">Rate <span id="to_curr_label">USD</span> → CAD:</strong></td>
             <td style="padding:4px 0;">
-                <input type="number" step="0.000001" placeholder="0.714286" id="rate_from_cad" disabled 
-                       style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;" 
+                <input type="number" step="0.000001" placeholder="0.714286" id="rate_from_cad" disabled
+                       style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:110px;color:black;"
                        oninput="updateRatePreview()">
             </td>
         </tr>
-
-        <!-- LIVE PREVIEW -->
         <tr>
             <td style="padding:4px 0;"></td>
             <td style="padding:4px 0;">
-                <div id="preview" style="margin-top:8px;font-size:16px;font-weight:bold;color:#1976d2;background:#e3f2fd;padding:8px;border-radius:4px;"></div>
+                <div id="preview" style="margin-top:8px;font-size:16px;font-weight:bold;color:#1976d2;
+                                      background:#e3f2fd;padding:8px;border-radius:4px;"></div>
             </td>
         </tr>
-
-        <!-- REST OF FORM -->
         <tr>
             <td style="padding:4px 0;"><strong style="color:black;">FINTRAC:</strong></td>
             <td style="padding:4px 0;">
@@ -253,31 +316,36 @@
         <tr>
             <td style="padding:4px 0;"><strong style="color:black;">Receipt:</strong></td>
             <td style="padding:4px 0;">
-                <input type="file" name="receipt" accept=".pdf,.jpg,.jpeg,.png" style="padding:5px;border:1px dashed #ddd;border-radius:4px;width:100%;max-width:250px;font-size:12px;color:black;">
+                <input type="file" name="receipt" accept=".pdf,.jpg,.jpeg,.png"
+                       style="padding:5px;border:1px dashed #ddd;border-radius:4px;width:100%;max-width:250px;font-size:12px;color:black;">
             </td>
         </tr>
         <tr>
             <td style="padding:4px 0;"><strong style="color:black;">Notes:</strong></td>
             <td style="padding:4px 0;">
-                <textarea name="notes" rows="2" placeholder="Additional notes..." style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:100%;max-width:350px;resize:vertical;color:black;"></textarea>
+                <textarea name="notes" rows="2" placeholder="Additional notes..."
+                          style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;
+                                 width:100%;max-width:350px;resize:vertical;color:black;"></textarea>
             </td>
         </tr>
     </table>
 
     <div style="display:flex;gap:12px;margin-top:15px;">
-        <input type="button" value="PREVIEW" onclick="showPreview()" 
-               style="flex:1;padding:10px;background:linear-gradient(135deg,#2196f3,#1976d2);color:white;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;">
-        <input type="submit" value="CONFIRM EXCHANGE" 
-               style="flex:1;padding:10px;background:linear-gradient(135deg,#4caf50,#388e3c);color:white;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;">
+        <input type="button" value="PREVIEW" onclick="showPreview()"
+               style="flex:1;padding:10px;background:linear-gradient(135deg,#2196f3,#1976d2);color:white;
+                      border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;">
+        <input type="submit" value="CONFIRM EXCHANGE"
+               style="flex:1;padding:10px;background:linear-gradient(135deg,#4caf50,#388e3c);color:white;
+                      border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;">
     </div>
 </form>
 
 <script>
-let FLAT_FEE_CAD = {{ current_flat_fee|tojson }};
+let FLAT_FEE_CAD = {{ current_flat_fee|default(0.30)|tojson }};
 const fmt = n => Number(n).toFixed(2);
 
 function updateFeePreview() {
-    const flatFee = parseFloat(document.querySelector('input[name="flat_fee_cad"]').value) || 0;
+    const flatFee = parseFloat(document.querySelector('input[name="flat_fee_cad"]').value) || FLAT_FEE_CAD;
     FLAT_FEE_CAD = flatFee;
     updateRatePreview();
 }
@@ -287,7 +355,6 @@ function updateLabels() {
     const fixedLabel = document.getElementById('fixed_currency_label');
     const amountLabel = document.getElementById('fixed_amount_label');
     const otherLabel = document.getElementById('other_currency_label');
-
     if (mode === 'client_fixed') {
         fixedLabel.innerHTML = 'Client <strong style="color:black;">sells:</strong>';
         amountLabel.innerHTML = 'Amount:';
@@ -308,10 +375,8 @@ function toggleSecondRate() {
     const input = document.getElementById('rate_from_cad');
     const from = document.getElementById('from_curr_label');
     const to = document.getElementById('to_curr_label');
-
     from.textContent = fixed;
     to.textContent = other;
-
     if (fixed !== 'CAD' && other !== 'CAD') {
         row.style.display = 'table-row';
         input.disabled = false;
@@ -326,10 +391,10 @@ function toggleSecondRate() {
     }
 }
 
-function getRateToCAD()   { return parseFloat(document.getElementById('rate_to_cad').value) || 0; }
-function getRateFromCAD() { 
-    const i = document.getElementById('rate_from_cad'); 
-    return i.disabled ? 0 : (parseFloat(i.value) || 0); 
+function getRateToCAD() { return parseFloat(document.getElementById('rate_to_cad').value) || 0; }
+function getRateFromCAD() {
+    const i = document.getElementById('rate_from_cad');
+    return i.disabled ? 0 : (parseFloat(i.value) || 0);
 }
 
 function updateRatePreview() {
@@ -339,17 +404,14 @@ function updateRatePreview() {
     const fixedAmt = parseFloat(document.getElementById('fixed_amount').value) || 0;
     const rateToCAD = getRateToCAD();
     const rateFromCAD = getRateFromCAD();
-
     let html = '';
-    if (fixedAmt <= 0) { 
-        document.getElementById('preview').innerHTML = ''; 
-        return; 
+    if (fixedAmt <= 0) {
+        document.getElementById('preview').innerHTML = '';
+        return;
     }
-
     const needsBoth = (fixedCurr !== 'CAD' && otherCurr !== 'CAD');
     const fromCurr = mode === 'client_fixed' ? fixedCurr : otherCurr;
     const toCurr = mode === 'client_fixed' ? otherCurr : fixedCurr;
-
     if (needsBoth && (rateToCAD <= 0 || rateFromCAD <= 0)) {
         html = '<span style="color:#c62828;">Enter both rates!</span>';
     } else if (!needsBoth && rateToCAD <= 0) {
@@ -382,7 +444,7 @@ function updateRatePreview() {
                     html = `PAYS: <strong>${fmt(fixedAmt)} ${fromCurr}</strong> → GETS: <strong>${fmt(gets)} ${toCurr}</strong>`;
                 }
             }
-        } else {  // bank_fixed
+        } else {
             if (toCurr === 'CAD') {
                 const pays = (fixedAmt + FLAT_FEE_CAD) / rateToCAD;
                 html = `PAYS: <strong>${fmt(pays)} ${fromCurr}</strong> → GETS: <strong>${fmt(fixedAmt)} CAD</strong>`;
@@ -397,7 +459,6 @@ function updateRatePreview() {
             }
         }
     }
-
     document.getElementById('preview').innerHTML = html;
 }
 
@@ -409,19 +470,15 @@ function showPreview() {
     const rateToCAD = getRateToCAD();
     const rateFromCAD = getRateFromCAD();
     const clientName = "{{ client.first_name|default('Customer') }} {{ client.last_name|default('') }}".trim();
-
     if (!fixedAmt) return alert('Enter amount');
     const needsBoth = (fixedCurr !== 'CAD' && otherCurr !== 'CAD');
     if (needsBoth && (!rateToCAD || !rateFromCAD)) return alert('Enter both rates');
     if (!needsBoth && !rateToCAD) return alert('Enter the rate');
-
     let pays, gets, fromCurr, toCurr, feeNote;
-
     if (mode === 'client_fixed') {
         fromCurr = fixedCurr;
         toCurr = otherCurr;
         pays = fixedAmt;
-
         if (fromCurr === 'CAD') {
             const remaining = fixedAmt - FLAT_FEE_CAD;
             if (remaining <= 0) return alert(`Amount too small! Need > $${FLAT_FEE_CAD} CAD`);
@@ -444,7 +501,6 @@ function showPreview() {
         fromCurr = otherCurr;
         toCurr = fixedCurr;
         gets = fixedAmt;
-
         if (toCurr === 'CAD') {
             pays = (fixedAmt + FLAT_FEE_CAD) / rateToCAD;
             feeNote = `$${FLAT_FEE_CAD} CAD added`;
@@ -457,16 +513,13 @@ function showPreview() {
             feeNote = `$${FLAT_FEE_CAD} CAD added`;
         }
     }
-
     const msg = `
 EXCHANGE PREVIEW
 ━━━━━━━━━━━━━━━━━━━━━━
 CLIENT: ${clientName}
 MODE: ${mode === 'client_fixed' ? 'Client Sells Fixed' : 'Client Wants Fixed'}
-
-PAYS:  ${fmt(pays)} ${fromCurr}
-GETS:  ${fmt(gets)} ${toCurr}
-
+PAYS: ${fmt(pays)} ${fromCurr}
+GETS: ${fmt(gets)} ${toCurr}
 FEE: $${FLAT_FEE_CAD} CAD (${feeNote})
 ━━━━━━━━━━━━━━━━━━━━━━
 Click CONFIRM to proceed
@@ -478,13 +531,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateLabels();
     toggleSecondRate();
     updateRatePreview();
-
-    ['fixed_amount', 'rate_to_cad', 'rate_from_cad'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('input', updateRatePreview);
-    });
-    document.querySelectorAll('input[name="mode"], #fixed_currency, #other_currency')
-        .forEach(el => el.addEventListener('change', updateLabels));
+    document.getElementById('fixed_amount')?.focus();
 });
 </script>
+
 {% endblock %}

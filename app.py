@@ -36,7 +36,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-
+from telegram.error import TelegramError  # ADD THIS IMPORT
 # AFTER: from flask_mail import Mail, Message
 from telegram import Bot
 import asyncio
@@ -816,17 +816,24 @@ def create_tenant():
 def index():
     global FEE_PERCENTAGE, FLAT_FEE_CAD
 
+    # === UPDATE FEES ===
     if request.method == 'POST' and 'update_fees' in request.form:
-        FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-        FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
-        flash(f'Fees: {FEE_PERCENTAGE*100}% + ${FLAT_FEE_CAD} CAD')
+        try:
+            FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
+            FLAT_FEE_CAD   = float(request.form['flat_fee_cad'])
+            flash(f'Fees updated: {FEE_PERCENTAGE*100:.1f}% + ${FLAT_FEE_CAD:.2f} CAD', 'success')
+        except ValueError:
+            flash('Invalid fee values!', 'danger')
         return redirect(url_for('index'))
 
+    # === YOUR EXISTING TRANSACTION CODE (keep 100% unchanged) ===
     if request.method == 'POST' and not session.get('selected_client_id'):
-        flash('Select client first!')
+        flash('Select client first!', 'danger')
         return redirect(url_for('customers'))
 
     if request.method == 'POST':
+        # ... [ALL YOUR TRANSACTION CODE EXACTLY AS-IS] ...
+        # (don’t change a single line inside here – it’s perfect)
         mode = request.form['mode']
         fixed_currency = request.form['fixed_currency']
         fixed_amount = float(request.form['fixed_amount'])
@@ -835,13 +842,11 @@ def index():
         is_fintrac = 'is_fintrac' in request.form
         status = request.form['status']
         rate_to_cad = float(request.form.get('rate_to_cad') or 0)
-
         if rate_to_cad <= 0:
-            flash('Rate required!')
+            flash('Rate required!', 'danger')
             return redirect(url_for('index'))
-
         if fixed_currency == other_currency:
-            flash('Same currency!')
+            flash('Same currency!', 'danger')
             return redirect(url_for('index'))
 
         exchange_rate = rate_to_cad
@@ -854,14 +859,14 @@ def index():
             if from_currency == 'CAD':
                 remaining = fixed_amount - FLAT_FEE_CAD
                 if remaining <= 0:
-                    flash(f'Need > ${FLAT_FEE_CAD} CAD')
+                    flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
                     return redirect(url_for('index'))
                 to_amount = remaining / exchange_rate
             elif to_currency == 'CAD':
                 gross = fixed_amount * exchange_rate
                 to_amount = gross - FLAT_FEE_CAD
                 if to_amount <= 0:
-                    flash('Amount too small after fee!')
+                    flash('Amount too small after fee!', 'danger')
                     return redirect(url_for('index'))
             else:
                 gross = fixed_amount * rate_to_cad
@@ -900,9 +905,10 @@ def index():
         )
         db.session.add(new_tx)
         db.session.commit()
-        flash(f'Tx {tx_ref} created!')
+        flash(f'Tx {tx_ref} created!', 'success')
         return redirect(url_for('index'))
 
+    # === LOAD DATA ===
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
     total_volume_usd = 0
     led_color = '#00FF00'
@@ -916,13 +922,18 @@ def index():
 
     balances = get_balances()
     open_transactions = Transaction.query.filter_by(status='pending', tenant_id=session.get('tenant_id')).all()
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
 
+    # === FINAL RETURN – THESE 3 LINES ARE THE ONLY ONES THAT MATTER FOR THE BOXES ===
     return render_template('index.html',
-                           client=client, balances=balances, open_transactions=open_transactions,
-                           current_fee=current_fee, current_flat_fee=current_flat_fee,
-                           total_volume_usd=total_volume_usd, led_color=led_color)
+        client=client,
+        balances=balances,
+        open_transactions=open_transactions,
+        total_volume_usd=total_volume_usd,
+        led_color=led_color,
+        fee_percentage=round(FEE_PERCENTAGE * 100, 1),   # ← shows in % box
+        flat_fee_cad=round(FLAT_FEE_CAD, 2),             # ← shows in flat fee box
+        current_flat_fee=round(FLAT_FEE_CAD, 2),         # ← used by JavaScript
+    )
 
 @app.route('/profile')
 @login_required
@@ -1480,15 +1491,54 @@ def set_fees():
         return redirect(url_for('profile'))
 
     global FEE_PERCENTAGE, FLAT_FEE_CAD
-    try:
-        FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-        FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
-        flash(f'Fees updated: {FEE_PERCENTAGE*100:.1f}% + ${FLAT_FEE_CAD:.2f} CAD', 'success')
-    except (ValueError, TypeError):
-        flash('Invalid fee values!', 'danger')
+    updated = False
+    messages = []
+
+    # === PERCENTAGE FEE ===
+    perc_raw = request.form['fee_percentage'].strip()
+    if perc_raw:  # Only update if not empty
+        try:
+            perc = float(perc_raw)
+            if 0 <= perc <= 10:
+                FEE_PERCENTAGE = perc / 100
+                messages.append(f"{perc:.1f}%")
+                updated = True
+            else:
+                flash('Percentage must be 0–10!', 'danger')
+                return redirect(url_for('profile'))
+        except ValueError:
+            flash('Invalid percentage! Use numbers only.', 'danger')
+            return redirect(url_for('profile'))
+    else:
+        messages.append(f"{FEE_PERCENTAGE * 100:.1f}%")
+
+    # === FLAT FEE ===
+    flat_raw = request.form['flat_fee_cad'].strip()
+    if flat_raw:  # Only update if not empty
+        try:
+            flat = float(flat_raw)
+            if 0 <= flat <= 50:
+                FLAT_FEE_CAD = flat
+                messages.append(f"${flat:.2f} CAD")
+                updated = True
+            else:
+                flash('Flat fee must be 0–50!', 'danger')
+                return redirect(url_for('profile'))
+        except ValueError:
+            flash('Invalid flat fee! Use numbers only.', 'danger')
+            return redirect(url_for('profile'))
+    else:
+        messages.append(f"${FLAT_FEE_CAD:.2f} CAD")
+
+    # === FINAL MESSAGE ===
+    if updated:
+        flash(f'Fees updated → {" + ".join(messages)}', 'success')
+    else:
+        flash('No changes made.', 'info')
+
     return redirect(url_for('profile'))
 
-from telegram.error import TelegramError  # ADD THIS IMPORT
+
 
 @app.route('/send_telegram_receipt/<int:tx_id>', methods=['POST'])
 @login_required
