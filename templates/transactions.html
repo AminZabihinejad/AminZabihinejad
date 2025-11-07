@@ -31,7 +31,7 @@
     </div>
 
     <!-- SEARCH + DATE RANGE FORM -->
-    <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; borderznymi-radius: 5px;">
+    <div style="background: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px;">
         <form method="GET">
             <strong>Search:</strong>
             <label>From: <input type="date" name="from_date" value="{{ from_date }}" style="width:130px;"></label>
@@ -39,13 +39,13 @@
             Client: <input type="text" name="client_name" placeholder="John Doe" value="{{ search_client }}" style="width:120px;">
             From: <input type="text" name="from_currency" placeholder="USD" value="{{ search_from }}" style="width:60px;">
             To: <input type="text" name="to_currency" placeholder="EUR" value="{{ search_to }}" style="width:60px;">
-            FINTRAC: 
+            FINTRAC:
             <select name="fintrac" style="margin-right:10px;">
                 <option value="">All</option>
                 <option value="yes" {{ 'selected' if fintrac == 'yes' }}>YES</option>
                 <option value="no" {{ 'selected' if fintrac == 'no' }}>NO</option>
             </select>
-            STATUS: 
+            STATUS:
             <select name="status" style="margin-right:10px;">
                 <option value="">All</option>
                 <option value="closed" {{ 'selected' if status == 'closed' }}>CLOSED</option>
@@ -59,111 +59,131 @@
     {% if transactions %}
         <!-- EXPORT BUTTON -->
         <div style="text-align:center; margin-bottom:15px;">
-            <a href="{{ url_for('export_csv', 
+            <a href="{{ url_for('export_csv',
                 from_date=from_date, to_date=to_date,
                 client_name=search_client, from_currency=search_from, to_currency=search_to,
-                fintrac=fintrac, status=status) }}" 
+                fintrac=fintrac, status=status) }}"
                style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
                 EXPORT {{ total_count }} FILTERED TRANSACTIONS CSV
             </a>
         </div>
 
-        <!-- TRANSACTION TABLE -->
-        <table style="width:100%; border-collapse: collapse; font-size:12px;">
-            <thead>
-                <tr style="background:#f2f2f2;">
-                    <th>ID</th>
-                    <th>Client</th>
-                    <th>Date</th>
-                    <th>From</th>
-                    <th>Amount</th>
-                    <th>To</th>
-                    <th>Amount</th>
-                    <th>Rate</th>
-                    <!-- FEE COLUMN REMOVED -->
-                    <th>Profit</th>
-                    <th>Created By</th>
-                    <th>FINTRAC</th>
-                    <th>Status</th>
-                    <th>Receipt</th>
-                    <th>Notes</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for tx in transactions %}
-                    <tr {% if tx.status == 'pending' %}style="background:#fff2cc;"{% endif %}>
-                        <td>{{ tx.tx_ref }}</td>
-                        <td style="white-space: nowrap;">
-                            <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
-                            <small style="color:#666;">
-                                {{ tx.client.phone[:12] }}...<br>
-                                {{ tx.client.city }}, {{ tx.client.province }} {{ tx.client.postal_code }}
-                            </small>
-                        </td>
-                        <td>{{ tx.date.strftime('%m/%d %H:%M') }}</td>
-                        <td>{{ tx.from_currency }}</td>
-                        <td style="color: red; font-weight: bold;">${{ "%.2f"|format(tx.from_amount) }}</td>
-                        <td>{{ tx.to_currency }}</td>
-                        <td style="color: green; font-weight: bold;">${{ "%.2f"|format(tx.to_amount) }}</td>
-                        <td style="white-space: nowrap;">{{ "%.8f"|format(tx.exchange_rate) }}</td>
-                        <!-- FEE CELL REMOVED -->
-                        <td style="color: #27ae60; font-weight: bold;">${{ "%.2f"|format(tx.total_fee_cad) }}</td>
-
-                        <!-- CREATED BY (SAFE) -->
-                        <td style="font-size:11px; color:#7f8c8d; text-align:center;">
-                            {% if tx.user %}
-                                {{ tx.user.username }}<br>
-                                <small>{{ tx.date.strftime('%m/%d %H:%M') }}</small>
-                            {% else %}
-                                <em style="color:#999;">[deleted user]</em>
-                            {% endif %}
-                        </td>
-
-                        <td style="text-align:center;">
-                            {% if tx.is_fintrac %}
-                                <span style="background:#e74c3c; color:white; padding:3px 8px; border-radius:3px; font-weight:bold;">YES</span>
-                            {% else %}
-                                <span style="background:#27ae60; color:white; padding:3px 6px; border-radius:3px;">NO</span>
-                            {% endif %}
-                        </td>
-                        <td style="text-align:center;">
-                            <form method="POST" action="{{ url_for('update_status', tx_id=tx.id) }}" style="display:inline;">
-                                <select name="status" onchange="this.form.submit()" style="font-size:11px; padding:2px; border:1px solid #ddd;">
-                                    <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>CLOSED</option>
-                                    <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>PENDING</option>
-                                </select>
-                            </form>
-                        </td>
-                        <td style="text-align:center;">
-                            {% if tx.receipt_filename %}
-                                <a href="{{ url_for('download_receipt', tx_id=tx.id) }}" 
-                                   style="background:#27ae60; color:white; padding:5px 8px; text-decoration:none; border-radius:3px; font-size:10px;" 
-                                   title="{{ tx.receipt_filename }}">
-                                    DOWNLOAD
-                                </a>
-                            {% else %}
-                                <span style="color:#999; font-size:10px;">—</span>
-                            {% endif %}
-                        </td>
-                        <td style="max-width:150px;">{{ (tx.notes or '')[:30] }}{% if tx.notes|length > 30 %}...{% endif %}</td>
-                        <td style="white-space: nowrap;">
-                            <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}" style="background:#f39c12; color:white; padding:5px 8px; text-decoration:none; border-radius:3px; font-size:11px; margin:2px;">EDIT</a>
-                            <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}" 
-                               onclick="return confirm('Delete transaction {{ tx.tx_ref }}?')"
-                               style="background:#e74c3c; color:white; padding:5px 8px; text-decoration:none; border-radius:3px; font-size:11px; margin:2px;">
-                               DELETE
-                            </a>
-                            <a href="{{ url_for('print_receipt', tx_id=tx.id) }}" 
-                               target="_blank" 
-                               style="background:#9b59b6; color:white; padding:5px 8px; text-decoration:none; border-radius:3px; font-size:11px; margin:2px;">
-                               PRINT
-                            </a>
-                        </td>
+        <!-- CLEAN TRANSACTION TABLE -->
+        <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse: collapse; font-size:12px; min-width:900px;">
+                <thead>
+                    <tr style="background:#f2f2f2; text-align:left;">
+                        <th style="padding:8px;">ID</th>
+                        <th style="padding:8px;">Client Name</th>
+                        <th style="padding:8px;">Date</th>
+                        <th style="padding:8px;">From</th>
+                        <th style="padding:8px; text-align:right;">Amount</th>
+                        <th style="padding:8px;">To</th>
+                        <th style="padding:8px; text-align:right;">Amount</th>
+                        <th style="padding:8px;">Created By</th>
+                        <th style="padding:8px; text-align:center;">FINTRAC</th>
+                        <th style="padding:8px; text-align:center;">Status</th>
+                        <th style="padding:8px; text-align:center;">Receipt</th>
+                        <th style="padding:8px;">Notes</th>
+                        <th style="padding:8px; text-align:center;">Action</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                        <tr {% if tx.status == 'pending' %}style="background:#fff9e6;"{% endif %}>
+                            <!-- ID -->
+                            <td style="padding:8px; font-weight:bold;">{{ tx.tx_ref }}</td>
+
+                            <!-- CLIENT NAME + PHONE ONLY -->
+                            <td style="padding:8px; white-space:nowrap;">
+                                <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
+                                <small style="color:#666;">{{ tx.client.phone }}</small>
+                            </td>
+
+                            <!-- DATE -->
+                            <td style="padding:8px; white-space:nowrap;">{{ tx.date.strftime('%m/%d %H:%M') }}</td>
+
+                            <!-- FROM -->
+                            <td style="padding:8px; text-align:center; font-weight:bold;">{{ tx.from_currency }}</td>
+                            <td style="padding:8px; text-align:right; color:#e74c3c; font-weight:bold;">
+                                ${{ "%.2f"|format(tx.from_amount) }}
+                            </td>
+
+                            <!-- TO -->
+                            <td style="padding:8px; text-align:center; font-weight:bold;">{{ tx.to_currency }}</td>
+                            <td style="padding:8px; text-align:right; color:#27ae60; font-weight:bold;">
+                                ${{ "%.2f"|format(tx.to_amount) }}
+                            </td>
+
+                            <!-- CREATED BY -->
+                            <td style="padding:8px; font-size:11px; color:#7f8c8d; text-align:center;">
+                                {% if tx.user %}
+                                    {{ tx.user.username }}<br>
+                                    <small>{{ tx.date.strftime('%m/%d %H:%M') }}</small>
+                                {% else %}
+                                    <em style="color:#ccc;">[deleted]</em>
+                                {% endif %}
+                            </td>
+
+                            <!-- FINTRAC -->
+                            <td style="padding:8px; text-align:center;">
+                                {% if tx.is_fintrac %}
+                                    <span style="background:#e74c3c; color:white; padding:3px 8px; border-radius:3px; font-weight:bold; font-size:10px;">YES</span>
+                                {% else %}
+                                    <span style="background:#95a5a6; color:white; padding:3px 6px; border-radius:3px; font-size:10px;">NO</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- STATUS -->
+                            <td style="padding:8px; text-align:center;">
+                                <form method="POST" action="{{ url_for('update_status', tx_id=tx.id) }}" style="display:inline;">
+                                    <select name="status" onchange="this.form.submit()" style="font-size:11px; padding:2px; border:1px solid #ddd; border-radius:3px;">
+                                        <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>CLOSED</option>
+                                        <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>PENDING</option>
+                                    </select>
+                                </form>
+                            </td>
+
+                            <!-- RECEIPT -->
+                            <td style="padding:8px; text-align:center;">
+                                {% if tx.receipt_filename %}
+                                    <a href="{{ url_for('download_receipt', tx_id=tx.id) }}"
+                                       style="background:#27ae60; color:white; padding:4px 8px; text-decoration:none; border-radius:3px; font-size:10px;"
+                                       title="Download PDF">
+                                        PDF
+                                    </a>
+                                {% else %}
+                                    <span style="color:#ccc; font-size:10px;">—</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- NOTES (TRUNCATED) -->
+                            <td style="padding:8px; max-width:120px; word-wrap:break-word; font-size:11px;">
+                                {{ (tx.notes or '')[:30] }}{% if (tx.notes or '')|length > 30 %}...{% endif %}
+                            </td>
+
+                            <!-- ACTION BUTTONS -->
+                            <td style="padding:8px; text-align:center; white-space:nowrap;">
+                                <a href="{{ url_for('edit_transaction', tx_id=tx.id) }}"
+                                   style="background:#f39c12; color:white; padding:4px 7px; text-decoration:none; border-radius:3px; font-size:10px; margin:1px;">
+                                    EDIT
+                                </a>
+                                <a href="{{ url_for('delete_transaction', tx_id=tx.id) }}"
+                                   onclick="return confirm('Delete {{ tx.tx_ref }}?')"
+                                   style="background:#e74c3c; color:white; padding:4px 7px; text-decoration:none; border-radius:3px; font-size:10px; margin:1px;">
+                                    DELETE
+                                </a>
+                                <a href="{{ url_for('print_receipt', tx_id=tx.id) }}"
+                                   target="_blank"
+                                   style="background:#9b59b6; color:white; padding:4px 7px; text-decoration:none; border-radius:3px; font-size:10px; margin:1px;">
+                                    PRINT
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
         <!-- PAGINATION -->
         <div style="text-align:center; margin:20px 0; font-size:14px;">
@@ -172,10 +192,7 @@
             </strong>
             <div style="margin-top:10px;">
                 {% if page > 1 %}
-                    <a href="{{ url_for('transactions', page=page-1,
-                        from_date=from_date, to_date=to_date,
-                        client_name=search_client, from_currency=search_from, to_currency=search_to,
-                        fintrac=fintrac, status=status) }}" 
+                    <a href="{{ url_for('transactions', page=page-1, **request.args.to_dict(flat=False)) }}"
                        style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
                         Previous
                     </a>
@@ -185,6 +202,7 @@
 
                 {% set start_page = [page - 2, 1]|max %}
                 {% set end_page = [page + 2, total_pages]|min %}
+
                 {% if start_page > 1 %}
                     <a href="{{ url_for('transactions', page=1, **request.args.to_dict(flat=False)) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">1</a>
                     {% if start_page > 2 %}...{% endif %}
@@ -194,10 +212,7 @@
                     {% if p == page %}
                         <strong style="margin:0 3px; padding:4px 8px; background:#27ae60; color:white; border-radius:3px;">{{ p }}</strong>
                     {% else %}
-                        <a href="{{ url_for('transactions', page=p,
-                            from_date=from_date, to_date=to_date,
-                            client_name=search_client, from_currency=search_from, to_currency=search_to,
-                            fintrac=fintrac, status=status) }}" 
+                        <a href="{{ url_for('transactions', page=p, **request.args.to_dict(flat=False)) }}"
                            style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">
                             {{ p }}
                         </a>
@@ -210,10 +225,7 @@
                 {% endif %}
 
                 {% if page < total_pages %}
-                    <a href="{{ url_for('transactions', page=page+1,
-                        from_date=from_date, to_date=to_date,
-                        client_name=search_client, from_currency=search_from, to_currency=search_to,
-                        fintrac=fintrac, status=status) }}" 
+                    <a href="{{ url_for('transactions', page=page+1, **request.args.to_dict(flat=False)) }}"
                        style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
                         Next
                     </a>
@@ -223,24 +235,23 @@
             </div>
         </div>
 
-        <!-- TOTALS -->
-        <p style="margin-top:10px; font-weight:bold; text-align:center;">
+        <!-- PAGE TOTALS -->
+        <p style="margin-top:10px; font-weight:bold; text-align:center; color:#2c3e50;">
             <em>
-                Total Volume: ${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }} | 
-                <span style="color:#27ae60;">
-                    Total Profit: ${{ "%.2f"|format(transactions|sum(attribute='total_fee_cad')) }}
-                    ({{ transactions|length }} exchanges on this page)
-                </span>
+                Page Volume: <span style="color:#e74c3c;">${{ "%.2f"|format(transactions|sum(attribute='from_amount')) }}</span> |
+                Page Profit: <span style="color:#27ae60;">${{ "%.2f"|format(transactions|sum(attribute='total_fee_cad')) }}</span>
+                ({{ transactions|length }} tx)
             </em>
         </p>
+
     {% else %}
-        <div style="text-align:center; padding:30px; color:#666;">
-            <h3>No transactions found!</h3>
-            <p>Select a client and add transactions from <a href="{{ url_for('index') }}">Overview</a></p>
+        <div style="text-align:center; padding:40px; color:#777; background:#f8f9fa; border-radius:8px;">
+            <h3>No transactions found</h3>
+            <p>Select a client and create transactions from <a href="{{ url_for('index') }}">Overview</a></p>
         </div>
     {% endif %}
 
-    <div style="margin-top:20px; text-align:center;">
-        <a href="{{ url_for('index') }}" style="font-size:16px;">Back to Overview</a>
+    <div style="margin-top:30px; text-align:center;">
+        <a href="{{ url_for('index') }}" style="font-size:16px; color:#3498db;">Back to Overview</a>
     </div>
 {% endblock %}
