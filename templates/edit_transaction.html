@@ -1,24 +1,219 @@
 {% extends "base.html" %}
-{% block title %}Edit Transaction{% endblock %}
+{% block title %}Edit Transaction #{{ tx.tx_ref }}{% endblock %}
 {% block content %}
-<h2>✏️ Edit Transaction #{{ tx.tx_ref }}</h2>
-<div style="background:#fff3cd; padding:15px; border-radius:8px;">
-    <p><strong>Client:</strong> {{ tx.client.first_name }} {{ tx.client.last_name }}</p>
+<h2>Edit Transaction #{{ tx.tx_ref }}</h2>
+
+<!-- CLIENT INFO -->
+<div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:15px;">
+    <p><strong>Client:</strong> {{ tx.client.first_name }} {{ tx.client.last_name }}<br>
+       <small>Phone: {{ tx.client.phone }} | {{ tx.client.city }}, {{ tx.client.province }}</small></p>
 </div>
 
-<form method="POST">
-    <table style="width:100%;">
-        <tr><td><strong>From:</strong></td><td>{{ tx.from_currency }}</td></tr>
-        <tr><td><strong>From Amount:</strong></td><td><input type="number" name="from_amount" step="0.01" value="{{ "%.2f"|format(tx.from_amount) }}" required></td></tr>
-        <tr><td><strong>To:</strong></td><td>{{ tx.to_currency }}</td></tr>
-        <tr><td><strong>Rate:</strong></td><td><input type="number" name="exchange_rate" step="0.001" value="{{ "%.4f"|format(tx.exchange_rate) }}" required></td></tr>
-	<tr><td><strong>FINTRAC:</strong></td><td>
-    		<input type="checkbox" name="is_fintrac" {% if tx.is_fintrac %}checked{% endif %}> 
-    		<span style="color:#e74c3c;">🚨 Report to FINTRAC ($10K+)</span>
-	</td></tr>
-        <tr><td><strong>Notes:</strong></td><td><textarea name="notes" rows="2">{{ tx.notes or '' }}</textarea></td></tr>
+<form method="POST" id="edit-form">
+    <table style="width:100%; font-size:14px; border-collapse:collapse;">
+        <!-- FROM CURRENCY -->
+        <tr>
+            <td style="padding:8px; font-weight:bold; width:180px;">From Currency:</td>
+            <td style="padding:8px;">
+                <strong style="color:#e74c3c;">{{ tx.from_currency }}</strong>
+            </td>
+        </tr>
+
+        <!-- FROM AMOUNT -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">From Amount:</td>
+            <td style="padding:8px;">
+                <input type="number" name="from_amount" id="from_amount" step="0.01"
+                       value="{{ "%.2f"|format(tx.from_amount) }}" required
+                       style="width:120px; padding:6px; font-size:14px;">
+                <span style="margin-left:10px; color:#e74c3c; font-weight:bold;">{{ tx.from_currency }}</span>
+            </td>
+        </tr>
+
+        <!-- TO CURRENCY -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">To Currency:</td>
+            <td style="padding:8px;">
+                <strong style="color:#27ae60;">{{ tx.to_currency }}</strong>
+            </td>
+        </tr>
+
+        <!-- RATE 1: FROM to CAD -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Rate 1 ({{ tx.from_currency }} to CAD):</td>
+            <td style="padding:8px;">
+                <input type="number" name="rate_from_cad" id="rate_from_cad" step="0.000001"
+                       value="{% if tx.from_currency != 'CAD' %}{{ "%.6f"|format(rate_from_cad) }}{% else %}1.000000{% endif %}"
+                       {% if tx.from_currency == 'CAD' %}readonly style="background:#f9f9f9;"{% endif %}
+                       style="width:140px; padding:6px; font-size:14px;">
+                <span style="margin-left:5px;">CAD</span>
+            </td>
+        </tr>
+
+        <!-- RATE 2: TO to CAD -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Rate 2 ({{ tx.to_currency }} to CAD):</td>
+            <td style="padding:8px;">
+                <input type="number" name="rate_to_cad" id="rate_to_cad" step="0.000001"
+                       value="{% if tx.to_currency != 'CAD' %}{{ "%.6f"|format(rate_to_cad) }}{% else %}1.000000{% endif %}"
+                       {% if tx.to_currency == 'CAD' %}readonly style="background:#f9f9f9;"{% endif %}
+                       style="width:140px; padding:6px; font-size:14px;">
+                <span style="margin-left:5px;">CAD</span>
+            </td>
+        </tr>
+
+        <!-- INTERNAL RATE: AUTO-CALCULATED, NOT EDITABLE -->
+        <tr style="background:#f8f9fa;">
+            <td style="padding:8px; font-weight:bold; color:#7f8c8d;">Internal Rate ({{ tx.from_currency }} to {{ tx.to_currency }}):</td>
+            <td style="padding:8px;">
+                <span id="exchange_rate_display" style="font-family:monospace; font-size:15px; font-weight:bold; color:#2c3e50;">
+                    {{ "%.6f"|format(tx.exchange_rate) }}
+                </span>
+                <input type="hidden" name="exchange_rate" id="exchange_rate" value="{{ "%.6f"|format(tx.exchange_rate) }}">
+            </td>
+        </tr>
+
+        <!-- TO AMOUNT: LIVE DISPLAY -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">To Amount:</td>
+            <td style="padding:8px;">
+                <span id="to_amount_display" style="font-weight:bold; color:#27ae60; font-size:16px;">
+                    {{ "%.2f"|format(tx.to_amount) }}
+                </span>
+                <span style="margin-left:10px; color:#27ae60; font-weight:bold;">{{ tx.to_currency }}</span>
+            </td>
+        </tr>
+
+        <!-- FEES -->
+        <tr><td colspan="2"><hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;"></td></tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Flat Fee:</td>
+            <td style="padding:8px;">${{ "%.2f"|format(flat_fee_cad) }} CAD</td>
+        </tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Rate Fee:</td>
+            <td style="padding:8px;">${{ "%.2f"|format(profit_cad - flat_fee_cad) }} CAD</td>
+        </tr>
+        <tr style="background:#e8f5e9;">
+            <td style="padding:8px; font-weight:bold; font-size:15px;">Total Profit:</td>
+            <td style="padding:8px; font-weight:bold; color:#27ae60; font-size:16px;">
+                $<span id="profit_display">{{ "%.2f"|format(profit_cad) }}</span> CAD
+            </td>
+        </tr>
+
+        <!-- FINTRAC -->
+        <tr><td colspan="2"><hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;"></td></tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold; vertical-align:top;">FINTRAC:</td>
+            <td style="padding:8px;">
+                <label style="font-size:14px;">
+                    <input type="checkbox" name="is_fintrac" {% if tx.is_fintrac %}checked{% endif %}>
+                    <span style="color:#e74c3c; font-weight:bold;">Report to FINTRAC ($10,000+ CAD)</span>
+                </label>
+            </td>
+        </tr>
+
+        <!-- RECEIPT -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Receipt:</td>
+            <td style="padding:8px;">
+                {% if tx.receipt_filename %}
+                    <a href="{{ url_for('download_receipt', tx_id=tx.id) }}" style="color:#27ae60; font-weight:bold;">PDF Available</a>
+                {% else %}
+                    <span style="color:#999;">—</span>
+                {% endif %}
+            </td>
+        </tr>
+
+        <!-- NOTES -->
+        <tr>
+            <td style="padding:8px; font-weight:bold; vertical-align:top;">Notes:</td>
+            <td style="padding:8px;">
+                <textarea name="notes" rows="3" style="width:100%; padding:8px; font-size:14px;">{{ tx.notes or '' }}</textarea>
+            </td>
+        </tr>
+
+        <!-- SUBMIT -->
+        <tr>
+            <td colspan="2" style="padding:20px 8px; text-align:center;">
+                <input type="submit" value="UPDATE TRANSACTION"
+                       style="width:100%; padding:15px; background:#27ae60; color:white; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer;">
+            </td>
+        </tr>
     </table>
-    <input type="submit" value="💾 UPDATE TRANSACTION" style="width:100%; padding:15px; background:#27ae60; color:white;">
 </form>
-<a href="{{ url_for('transactions') }}">📋 Back to Transactions</a>
+
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('transactions') }}" style="color:#3498db; font-size:16px;">Back to Transactions</a>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const fromAmount = document.getElementById('from_amount');
+    const rateFrom = document.getElementById('rate_from_cad');
+    const rateTo = document.getElementById('rate_to_cad');
+    const toDisplay = document.getElementById('to_amount_display');
+    const exchangeRateInput = document.getElementById('exchange_rate');
+    const exchangeRateDisplay = document.getElementById('exchange_rate_display');
+    const profitDisplay = document.getElementById('profit_display');
+
+    const flatFee = {{ flat_fee_cad|default(0) }};
+    const feePct = {{ fee_percentage|default(0) }};
+    const fromCurr = "{{ tx.from_currency }}";
+    const toCurr = "{{ tx.to_currency }}";
+
+    function updateAll() {
+        const from = parseFloat(fromAmount.value) || 0;
+        const r1 = parseFloat(rateFrom.value) || 0;
+        const r2 = parseFloat(rateTo.value) || 0;
+
+        let to = 0;
+        let exchangeRate = 0;
+        let profit = flatFee + (from * feePct);
+
+        if (from > 0 && r1 > 0 && r2 > 0) {
+            let grossCad, netCad;
+
+            if (fromCurr === 'CAD') {
+                const remaining = from - flatFee;
+                to = remaining > 0 ? remaining / r2 : 0;
+                exchangeRate = to / from;
+            } else if (toCurr === 'CAD') {
+                grossCad = from * r1;
+                to = grossCad - flatFee;
+                exchangeRate = to / from;
+            } else {
+                grossCad = from * r1;
+                netCad = grossCad - flatFee;
+                to = netCad > 0 ? netCad / r2 : 0;
+                exchangeRate = to / from;
+            }
+        }
+
+        // Update UI
+        toDisplay.textContent = to.toFixed(2);
+        exchangeRateDisplay.textContent = exchangeRate.toFixed(6);
+        exchangeRateInput.value = exchangeRate.toFixed(6);
+        profitDisplay.textContent = profit.toFixed(2);
+    }
+
+    // Only update internal rate when Rate 1 or Rate 2 changes
+    [rateFrom, rateTo].forEach(el => {
+        if (el && !el.readOnly) {
+            el.addEventListener('input', updateAll);
+        }
+    });
+
+    // From Amount only scales To Amount (using current internal rate)
+    fromAmount.addEventListener('input', function() {
+        const from = parseFloat(fromAmount.value) || 0;
+        const currentRate = parseFloat(exchangeRateInput.value) || 0;
+        const to = from * currentRate;
+        toDisplay.textContent = to.toFixed(2);
+    });
+
+    // Initial calculation
+    updateAll();
+});
+</script>
 {% endblock %}

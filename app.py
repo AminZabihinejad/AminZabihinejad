@@ -1170,16 +1170,84 @@ def download_id_file(client_id, id_num):
 @login_required
 def edit_transaction(tx_id):
     tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
+
     if request.method == 'POST':
-        tx.from_amount = float(request.form['from_amount'])
-        tx.to_amount = tx.from_amount * float(request.form['exchange_rate'])
-        tx.exchange_rate = float(request.form['exchange_rate'])
-        tx.notes = request.form.get('notes')
-        tx.is_fintrac = request.form.get('is_fintrac', False) == 'on'
-        db.session.commit()
-        flash(f'Tx #{tx.tx_ref} updated!')
+        try:
+            # === INPUTS ===
+            from_amount = float(request.form['from_amount'])
+            rate_from_cad = float(request.form['rate_from_cad'])  # 1 FROM = X CAD
+            rate_to_cad = float(request.form['rate_to_cad'])      # 1 TO = Y CAD
+            notes = request.form.get('notes', '')
+            is_fintrac = 'is_fintrac' in request.form
+
+            # === VALIDATION ===
+            if from_amount <= 0:
+                flash('Amount must be > 0!', 'danger')
+                return redirect(url_for('edit_transaction', tx_id=tx_id))
+
+            # === CASE 1: CAD INVOLVED ===
+            if tx.from_currency == 'CAD' or tx.to_currency == 'CAD':
+                if tx.from_currency == 'CAD':
+                    # CAD → X
+                    remaining = from_amount - FLAT_FEE_CAD
+                    if remaining <= 0:
+                        flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
+                        return redirect(url_for('edit_transaction', tx_id=tx_id))
+                    to_amount = remaining / rate_to_cad
+                else:
+                    # X → CAD
+                    gross_cad = from_amount * rate_from_cad
+                    to_amount = gross_cad - FLAT_FEE_CAD
+                    if to_amount <= 0:
+                        flash('Amount too small after fee!', 'danger')
+                        return redirect(url_for('edit_transaction', tx_id=tx_id))
+            else:
+                # === CASE 2: NO CAD (e.g. USD → EUR) ===
+                gross_cad = from_amount * rate_from_cad
+                net_cad = gross_cad - FLAT_FEE_CAD
+                if net_cad <= 0:
+                    flash('Amount too small after fee!', 'danger')
+                    return redirect(url_for('edit_transaction', tx_id=tx_id))
+                to_amount = net_cad / rate_to_cad
+
+            # === PROFIT ===
+            profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
+            total_fee = round(profit_cad, 2)
+
+            # === INTERNAL EXCHANGE RATE (FROM → TO) ===
+            exchange_rate = to_amount / from_amount if from_amount > 0 else 0
+
+            # === UPDATE DB ===
+            tx.from_amount = round(from_amount, 6)
+            tx.to_amount = round(to_amount, 6)
+            tx.exchange_rate = round(exchange_rate, 6)
+            tx.notes = notes
+            tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
+            tx.total_fee_cad = total_fee
+
+            db.session.commit()
+            flash(f'Tx #{tx.tx_ref} updated!', 'success')
+        except Exception as e:
+            flash(f'Error: {str(e)}', 'danger')
+
         return redirect(url_for('transactions'))
-    return render_template('edit_transaction.html', tx=tx)
+
+    # === GET: PRE-CALCULATE CURRENT RATES ===
+    gross_cad = tx.from_amount * tx.exchange_rate
+    rate_from_cad = gross_cad / tx.from_amount if tx.from_amount else 0
+    net_cad = gross_cad - FLAT_FEE_CAD
+    rate_to_cad = net_cad / tx.to_amount if tx.to_amount else 0
+
+    return render_template(
+        'edit_transaction.html',
+        tx=tx,
+        client=tx.client,
+        flat_fee_cad=FLAT_FEE_CAD,
+        fee_percentage=FEE_PERCENTAGE,
+        profit_cad=tx.total_fee_cad or 0,
+        rate_from_cad=rate_from_cad,
+        rate_to_cad=rate_to_cad
+    )
 
 @app.route('/transactions')
 @login_required
