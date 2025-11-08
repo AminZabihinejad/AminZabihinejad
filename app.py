@@ -1689,5 +1689,11 @@ def send_telegram_receipt(tx_id):
             try: os.remove(pdf_path)
             except: pass
 
+@app.route('/download_receipt/<int:tx_id>')
+@login_required
+def download_receipt(tx_id):
+    """Legacy alias — redirects to download_pdf"""
+    return redirect(url_for('download_pdf', tx_id=tx_id))
+
 if __name__ == '__main__':
     app.run(debug=True)

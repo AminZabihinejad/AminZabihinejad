@@ -147,11 +147,12 @@
                             <!-- RECEIPT -->
                             <td style="padding:8px; text-align:center;">
                                 {% if tx.receipt_filename %}
-                                    <a href="{{ url_for('download_receipt', tx_id=tx.id) }}"
-                                       style="background:#27ae60; color:white; padding:4px 8px; text-decoration:none; border-radius:3px; font-size:10px;"
-                                       title="Download PDF">
-                                        PDF
-                                    </a>
+                                    <a href="{{ url_for('download_pdf', tx_id=tx.id) }}"
+   target="_blank"
+   style="background:#27ae60; color:white; padding:4px 8px; text-decoration:none; border-radius:3px; font-size:10px;"
+   title="Download PDF">
+   PDF
+</a>
                                 {% else %}
                                     <span style="color:#ccc; font-size:10px;">—</span>
                                 {% endif %}

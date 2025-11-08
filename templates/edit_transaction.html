@@ -104,7 +104,11 @@
                 <input type="file" name="receipt_file" accept=".pdf" style="padding:6px; font-size:14px;">
                 <br><small style="color:#7f8c8d;">Max 5MB. Replaces existing receipt.</small>
                 {% if tx.receipt_filename %}
-                    <br><a href="{{ url_for('download_receipt', tx_id=tx.id) }}" style="color:#27ae60; font-weight:bold; font-size:13px;">Current PDF</a>
+                    <br><a href="{{ url_for('download_pdf', tx_id=tx.id) }}" 
+   target="_blank" 
+   style="color:#27ae60; font-weight:bold; font-size:13px; text-decoration:underline;">
+   Download Current PDF
+</a>
                 {% endif %}
             </td>
         </tr>
