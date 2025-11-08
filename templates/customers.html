@@ -3,33 +3,36 @@
 {% block content %}
 <h2>Customer Management</h2>
 
-<!-- SEARCH BAR WITH RISK + STATUS FILTER + ADD BUTTON -->
+<!-- SEARCH BAR WITH NAME, PHONE, RISK, BR + ADD BUTTON -->
 <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
         <form method="GET" style="display: inline; flex: 1; min-width: 600px;">
-            <input type="text" name="search" placeholder="Search Name/Phone..."  
-                   value="{{ request.args.get('search', '') }}" style="width:300px; padding:8px; margin-right:10px;">
-            
-            Risk: <select name="risk_level" style="margin:0 10px; padding:5px; width:120px;">
+            <input type="text" name="search" placeholder="Search Name or Phone..."
+                   value="{{ request.args.get('search', '') }}" style="width:280px; padding:8px; margin-right:10px; border:1px solid #ddd; border-radius:4px;">
+           
+            <label>Risk:</label>
+            <select name="risk_level" style="margin:0 8px; padding:6px; width:110px; border:1px solid #ddd; border-radius:4px;">
                 <option value="">All Risks</option>
                 <option value="low risk" {{ 'selected' if request.args.get('risk_level') == 'low risk' }}>Low</option>
                 <option value="medium risk" {{ 'selected' if request.args.get('risk_level') == 'medium risk' }}>Med</option>
                 <option value="high risk" {{ 'selected' if request.args.get('risk_level') == 'high risk' }}>High</option>
                 <option value="on hold" {{ 'selected' if request.args.get('risk_level') == 'on hold' }}>Hold</option>
             </select>
-            
-            Status: <select name="tx_status" style="margin:0 10px; padding:5px; width:140px;">
-                <option value="">All Status</option>
-                <option value="pending" {{ 'selected' if request.args.get('tx_status') == 'pending' }}>Pending</option>
-                <option value="closed" {{ 'selected' if request.args.get('tx_status') == 'closed' }}>Closed</option>
+           
+            <label>BR:</label>
+            <select name="br_status" style="margin:0 8px; padding:6px; width:130px; border:1px solid #ddd; border-radius:4px;">
+                <option value="">All BR</option>
+                <option value="active" {{ 'selected' if request.args.get('br_status') == 'active' }}>Active</option>
+                <option value="inactive" {{ 'selected' if request.args.get('br_status') == 'inactive' }}>Inactive</option>
+                <option value="pending" {{ 'selected' if request.args.get('br_status') == 'pending' }}>Pending</option>
             </select>
-            
-            <input type="submit" value="SEARCH" style="padding:8px 15px; background:#3498db; color:white; border:none; border-radius:4px;">
-            <a href="{{ url_for('customers') }}" style="margin-left:10px; color:#3498db;">[Clear]</a>
+           
+            <input type="submit" value="SEARCH" style="padding:8px 16px; background:#3498db; color:white; border:none; border-radius:4px; font-weight:bold;">
+            <a href="{{ url_for('customers') }}" style="margin-left:12px; color:#e74c3c; text-decoration:underline; font-size:14px;">[Clear]</a>
         </form>
-        
+       
         <!-- ADD NEW CUSTOMER BUTTON -->
-        <a href="{{ url_for('edit_client', client_id='new') }}" 
+        <a href="{{ url_for('edit_client', client_id='new') }}"
            style="background:#27ae60; color:white; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:bold; font-size:16px; box-shadow:0 3px 10px rgba(39,174,96,0.3);">
            + ADD NEW CUSTOMER
         </a>
@@ -50,108 +53,153 @@
     }
 </style>
 <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid #ddd;">
-    <tr style="background:#3498db; color:white;">
-        <th style="padding:10px;">BR</th>
-        <th style="padding:10px;">ID</th>
-        <th style="padding:10px;">Name</th>
-        <th style="padding:10px;">Phone</th>
-        <th style="padding:10px;">Telegram</th> <!-- NEW COLUMN -->
-        <th style="padding:10px;">ID Card</th>
-        <th style="padding:10px;">Risk</th>
-        <th style="padding:10px; width:100px;">Notes</th>
-        <th style="padding:10px;">Volume</th>
-        <th style="padding:10px;">Tx</th>
-        <th style="padding:10px;">Pending</th>
-        <th style="padding:10px;">Created</th>
-        <th style="padding:10px; width:160px;">Action</th>
-    </tr>
-    {% for data in clients_data %}
-    <tr style="border-bottom:1px solid #eee; {% if data.client.risk_level == 'high risk' or data.client.risk_level == 'on hold' %}background:#fff5f5;{% endif %}">
-        <td style="padding:8px;"><span class="led-indicator" style="background-color: {{ data.led_color }};" title="Business Relation: ${{ '%.2f'|format(data.total_volume_usd) }} over past 6 months"></span></td>
-        <td style="padding:8px; font-family:monospace;">{{ data.client.id }}</td>
-        <td style="padding:8px;"><strong>{{ data.client.first_name }} {{ data.client.last_name }}</strong></td>
-        <td style="padding:8px;">{{ data.client.phone[:12] }}...</td>
-        
-        <!-- TELEGRAM ID COLUMN -->
-        <td style="padding:8px; text-align:center;">
-            {% if data.client.telegram_id %}
-                <a href="https://t.me/{{ data.client.telegram_id.lstrip('@') }}" target="_blank" 
-                   style="color:#0088cc; text-decoration:none; font-weight:bold;">
-                    <i class="fab fa-telegram-plane"></i> {{ data.client.telegram_id }}
-                </a>
-            {% else %}
-                <span style="color:#ccc; font-style:italic;">—</span>
-            {% endif %}
-        </td>
+    <thead>
+        <tr style="background:#3498db; color:white;">
+            <th style="padding:10px;">BR</th>
+            <th style="padding:10px;">ID</th>
+            <th style="padding:10px;">Name</th>
+            <th style="padding:10px;">Phone</th>
+            <th style="padding:10px;">Telegram</th>
+            <th style="padding:10px;">ID Card</th>
+            <th style="padding:10px;">Risk</th>
+            <th style="padding:10px; width:100px;">Notes</th>
+            <th style="padding:10px;">Volume</th>
+            <th style="padding:10px;">Tx</th>
+            <th style="padding:10px;">Pending</th>
+            <th style="padding:10px;">Created</th>
+            <th style="padding:10px; width:160px;">Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for data in clients_data %}
+        <tr style="border-bottom:1px solid #eee; {% if data.client.risk_level in ['high risk', 'on hold'] %}background:#fff5f5;{% endif %}">
+            <!-- BR LED -->
+            <td style="padding:8px;">
+                <span class="led-indicator" style="background-color: {{ data.led_color }};" 
+                      title="Business Relation: ${{ '%.2f'|format(data.total_volume_usd) }} over past 6 months"></span>
+            </td>
 
-        <td style="padding:8px; font-size:11px;">
-            {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
-                {% if data.client.id1_number %}
-                    <strong>{{ data.client.id1_number[:4] }}...{{ data.client.id1_number[-4:] }}</strong>
+            <!-- ID -->
+            <td style="padding:8px; font-family:monospace;">{{ data.client.id }}</td>
+
+            <!-- NAME -->
+            <td style="padding:8px;">
+                <strong>{{ data.client.first_name }} {{ data.client.last_name }}</strong>
+            </td>
+
+            <!-- PHONE -->
+            <td style="padding:8px;">
+                {{ data.client.phone or '—' }}
+            </td>
+       
+            <!-- TELEGRAM -->
+            <td style="padding:8px; text-align:center;">
+                {% if data.client.telegram_id and data.client.telegram_id|trim %}
+                    <a href="https://t.me/{{ data.client.telegram_id.lstrip('@') }}" target="_blank"
+                       style="color:#0088cc; text-decoration:none; font-weight:bold; font-size:11px;">
+                        Telegram {{ data.client.telegram_id }}
+                    </a>
+                {% else %}
+                    <span style="color:#ccc; font-style:italic; font-size:11px;">—</span>
+                {% endif %}
+            </td>
+
+            <!-- ID CARD -->
+            <td style="padding:8px; font-size:11px;">
+                {% if data.client.id1_number or data.client.id2_number or data.client.id3_number %}
+                    {% set id_num = data.client.id1_number or data.client.id2_number or data.client.id3_number %}
+                    <strong>{{ id_num[:4] }}...{{ id_num[-4:] }}</strong>
                     {% if data.client.id1_expiry_date %}
-                        <br><small style="{% if data.client.id1_expiry_date and data.client.id1_expiry_date < now %}color:red;{% else %}color:#666;{% endif %}">
+                        <br><small style="{% if data.client.id1_expiry_date < now %}color:red;{% else %}color:#666;{% endif %}">
                             Exp: {{ data.client.id1_expiry_date.strftime('%m/%y') }}
                         </small>
                     {% endif %}
-                {% elif data.client.id2_number %}
-                    <strong>{{ data.client.id2_number[:4] }}...{{ data.client.id2_number[-4:] }}</strong>
-                {% elif data.client.id3_number %}
-                    <strong>{{ data.client.id3_number[:4] }}...{{ data.client.id3_number[-4:] }}</strong>
+                {% else %}
+                    <span style="color:#999;">—</span>
                 {% endif %}
-            {% else %}
-                <span style="color:#999;">—</span>
-            {% endif %}
-        </td>
-        <td style="padding:8px; text-align:center; font-weight:bold;">
-            {% if data.client.risk_level == 'low risk' %}<span style="color:green;">LOW</span>
-            {% elif data.client.risk_level == 'medium risk' %}<span style="color:orange;">MED</span>
-            {% elif data.client.risk_level == 'high risk' %}<span style="color:red;">HIGH</span>
-            {% else %}<span style="color:red;">HOLD</span>{% endif %}
-        </td>
-        <td style="padding:8px;">
-            {% if data.client.notes %}
-                <div style="height:25px; overflow-y:auto; border:1px solid #ddd; padding:2px; background:#f9f9f9; font-size:9px; border-radius:3px;">
-                    {{ data.client.notes[:60] }}{% if data.client.notes|length > 60 %}...{% endif %}
+            </td>
+
+            <!-- RISK -->
+            <td style="padding:8px; text-align:center; font-weight:bold;">
+                {% if data.client.risk_level == 'low risk' %}
+                    <span style="color:green;">LOW</span>
+                {% elif data.client.risk_level == 'medium risk' %}
+                    <span style="color:orange;">MED</span>
+                {% elif data.client.risk_level == 'high risk' %}
+                    <span style="color:red;">HIGH</span>
+                {% elif data.client.risk_level == 'on hold' %}
+                    <span style="color:red;">HOLD</span>
+                {% else %}
+                    <span style="color:#95a5a6;">—</span>
+                {% endif %}
+            </td>
+
+            <!-- NOTES -->
+            <td style="padding:8px;">
+                {% if data.client.notes %}
+                    <div style="height:25px; overflow-y:auto; border:1px solid #ddd; padding:2px; background:#f9f9f9; font-size:9px; border-radius:3px;">
+                        {{ data.client.notes[:60] }}{% if data.client.notes|length > 60 %}...{% endif %}
+                    </div>
+                {% else %}
+                    <span style="color:#999; font-style:italic; font-size:11px;">—</span>
+                {% endif %}
+            </td>
+
+            <!-- VOLUME -->
+            <td style="padding:8px; font-weight:bold; font-size:11px; text-align:right;">
+                ${{ "%.1f"|format(data.total_volume_usd) }}
+            </td>
+
+            <!-- TOTAL TX -->
+            <td style="padding:8px; text-align:center;">{{ data.transactions_list|length }}</td>
+
+            <!-- PENDING TX -->
+            <td style="padding:8px; text-align:center;">
+                {% set pending_count = data.transactions_list|selectattr('status', 'equalto', 'pending')|list|length %}
+                {% if pending_count > 0 %}
+                    <span style="color:red; font-weight:bold;">{{ pending_count }}</span>
+                {% else %}
+                    <span style="color:green;">0</span>
+                {% endif %}
+            </td>
+
+            <!-- CREATED -->
+            <td style="padding:8px; font-size:11px; text-align:center; color:#666;">
+                {{ data.client.created_at.strftime('%m/%d/%y') }}
+            </td>
+
+            <!-- ACTIONS -->
+            <td style="padding:8px;">
+                <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
+                    <a href="{{ url_for('select_customer', client_id=data.client.id) }}"
+                       style="background:#3498db; color:white; padding:6px 10px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">
+                       SELECT
+                    </a>
+                    <a href="{{ url_for('edit_client', client_id=data.client.id) }}"
+                       style="background:#f39c12; color:white; padding:6px 10px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">
+                       EDIT
+                    </a>
                 </div>
-            {% else %}
-                <span style="color:#999; font-style:italic;">—</span>
-            {% endif %}
-        </td>
-        <td style="padding:8px; font-weight:bold; font-size:11px;">${{ "%.1f"|format(data.total_volume_usd) }}</td>
-        <td style="padding:8px;">{{ data.transactions_list|length }}</td>
-        <td style="padding:8px; text-align:center;">
-            {% set pending_tx = data.transactions_list|selectattr('status', 'equalto', 'pending')|list %}
-            {% if pending_tx|length > 0 %}
-                <span style="color:red; font-weight:bold;">{{ pending_tx|length }}</span>
-            {% else %}
-                <span style="color:green;">0</span>
-            {% endif %}
-        </td>
-        <td style="padding:8px; font-size:11px; text-align:center; color:#666;">
-            {{ data.client.created_at.strftime('%m/%d/%y') }}
-        </td>
-        <td style="padding:8px;">
-            <div style="display: flex; gap: 4px; justify-content: center;">
-                <a href="{{ url_for('select_customer', client_id=data.client.id) }}" 
-                   style="background:#3498db; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">SELECT</a>
-                <a href="{{ url_for('edit_client', client_id=data.client.id) }}" 
-                   style="background:#f39c12; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-size:10px; font-weight:bold; white-space: nowrap;">EDIT</a>
-            </div>
-        </td>
-    </tr>
-    {% else %}
-    <tr>
-        <td colspan="13" style="padding:40px; text-align:center; color:#999; font-size:16px;"> <!-- 13 cols now -->
-            <div style="font-size:48px; margin-bottom:15px;">No customers found</div>
-        </td>
-    </tr>
-    {% endfor %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
 
-<div style="margin-top:20px;">
-    <a href="{{ url_for('index') }}" style="font-size:16px;">Dashboard</a>
+<!-- NO RESULTS -->
+{% if clients_data|length == 0 %}
+<tr>
+    <td colspan="13" style="padding:50px; text-align:center; color:#999; font-size:16px; background:#f8f9fa;">
+        <div style="font-size:48px; margin-bottom:15px;">No customers found</div>
+        <a href="{{ url_for('edit_client', client_id='new') }}" style="color:#27ae60; font-weight:bold;">+ Add your first customer</a>
+    </td>
+</tr>
+{% endif %}
+
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('index') }}" style="font-size:16px; color:#3498db;">Back to Dashboard</a>
 </div>
 
-<!-- Font Awesome for Telegram Icon -->
+<!-- Font Awesome for Telegram -->
 <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
 {% endblock %}

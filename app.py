@@ -163,6 +163,7 @@ class Client(db.Model):
     province = db.Column(db.String(10), nullable=False)
     postal_code = db.Column(db.String(10), nullable=False)
     risk_level = db.Column(db.String(20), default='low risk')
+    br_status = db.Column(db.String(20), default='active')  # active, inactive, pending
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     telegram_id = db.Column(db.String(50), nullable=True)  # ← ADD THIS LINE
@@ -525,8 +526,8 @@ def save_id_file(file, client_id, id_num):
     return None, None
 
 def interpolate_color(volume):
-    min_volume = 3000
-    max_volume = 10000
+    min_volume = 1000
+    max_volume = 30000
     if volume < min_volume: return "#00FF00"
     if volume >= max_volume: return "#FF0000"
     ratio = (volume - min_volume) / (max_volume - min_volume)
@@ -1111,7 +1112,48 @@ def toggle_tenant(tenant_id):
 @app.route('/customers')
 @login_required
 def customers():
-    return render_template('customers.html', clients_data=calculate_clients_data(), now=datetime.utcnow().date())
+    query = Client.query.filter_by(tenant_id=session['tenant_id'])
+
+    # === SEARCH: Name or Phone (SQLite SAFE) ===
+    if request.args.get('search'):
+        term = request.args.get('search').strip().lower()
+        query = query.filter(
+            db.or_(
+                # Full name search: first + last
+                (Client.first_name + ' ' + Client.last_name).ilike(f"%{term}%"),
+                # Individual fields
+                Client.first_name.ilike(f"%{term}%"),
+                Client.last_name.ilike(f"%{term}%"),
+                Client.phone.ilike(f"%{term}%")
+            )
+        )
+
+    # === RISK LEVEL ===
+    if request.args.get('risk_level'):
+        query = query.filter(Client.risk_level == request.args.get('risk_level'))
+
+    # === BR STATUS ===
+    if request.args.get('br_status'):
+        query = query.filter(Client.br_status == request.args.get('br_status'))
+
+    # === ORDER & EXECUTE ===
+    clients = query.order_by(Client.id.desc()).all()
+
+    # === ENRICH DATA ===
+    clients_data = []
+    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    for c in clients:
+        txs = [t for t in c.transactions if t.date >= six_months_ago]
+        volume_usd = sum(convert_to_usd(t.from_amount, t.from_currency) for t in txs)
+        led_color = interpolate_color(volume_usd)
+        clients_data.append({
+            'client': c,
+            'transactions_list': c.transactions,
+            'total_volume_usd': volume_usd,
+            'led_color': led_color
+        })
+
+    return render_template('customers.html', clients_data=clients_data)
 
 @app.route('/select_customer/<int:client_id>')
 @login_required
