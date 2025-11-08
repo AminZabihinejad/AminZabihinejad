@@ -62,6 +62,11 @@ EXCHANGE_NAME = "MoneyExchange Pro"
 FEE_PERCENTAGE = 0.0
 FLAT_FEE_CAD = 5.0
 
+# === UPLOADS BACKUP (SAME METHOD AS DB) ===
+UPLOADS_DIR = Path('uploads')
+BACKUP_UPLOADS_DIR = Path(BACKUP_LOCAL_DIR) / 'uploads'
+BACKUP_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
 # === FLASK APP ===
 app = Flask(__name__)
 
@@ -330,6 +335,109 @@ def encrypt_db(db_path, key_bytes):
         print(f"ENCRYPT FAILED: {e}")
         return None
 
+def encrypt_file(input_path, key_bytes):
+    """Encrypt any file (ZIP, PDF, etc.)"""
+    f = Fernet(key_bytes)
+    with open(input_path, 'rb') as file:
+        data = file.read()
+    encrypted = f.encrypt(data)
+    encrypted_path = input_path.with_suffix('.enc')
+    with open(encrypted_path, 'wb') as file:
+        file.write(encrypted)
+    return encrypted_path
+
+def backup_uploads():
+    """Compress, encrypt, and send uploads/ folder"""
+    if not UPLOADS_DIR.exists() or not any(UPLOADS_DIR.iterdir()):
+        print("UPLOADS FOLDER EMPTY — SKIPPING")
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_name = f"uploads_backup_{timestamp}"
+    zip_path = BACKUP_UPLOADS_DIR / f"{zip_name}.zip"
+
+    print(f"COMPRESSING uploads/ → {zip_path}")
+    shutil.make_archive(str(zip_path.with_suffix('')), 'zip', UPLOADS_DIR)
+
+    # === ENCRYPT ZIP ===
+    encrypted_zip = encrypt_file(zip_path, KEY)
+    os.remove(zip_path)  # delete unencrypted
+
+    # === SEND VIA SAME METHOD AS DB ===
+    result = send_backup_file(str(encrypted_zip), f"UPLOADS_{timestamp}.zip.enc")
+    if result:
+        print(f"UPLOADS BACKUP SUCCESS: {result}")
+        os.remove(encrypted_zip)
+    else:
+        print("UPLOADS BACKUP FAILED")
+
+def send_backup_file(file_path, filename):
+    """REUSE SAME LOGIC AS DB BACKUP"""
+    mode = BACKUP_MODE
+
+    if mode == "email":
+        try:
+            with open(file_path, 'rb') as f:
+                data = f.read()
+            msg = Message(
+                subject=f"MoneyExchange UPLOADS Backup – {datetime.now():%Y-%m-%d %H:%M}",
+                recipients=[BACKUP_EMAIL_RECIPIENT],
+                sender=app.config['MAIL_DEFAULT_SENDER']
+            )
+            msg.attach(
+                filename=filename,
+                content_type='application/octet-stream',
+                data=data
+            )
+            with app.app_context():
+                mail.send(msg)
+            return f"EMAIL → {BACKUP_EMAIL_RECIPIENT}"
+        except Exception as e:
+            print(f"UPLOADS EMAIL FAILED: {e}")
+            return None
+
+    elif mode == "local":
+        final_path = BACKUP_UPLOADS_DIR / filename
+        shutil.move(file_path, final_path)
+        return f"LOCAL → {final_path}"
+
+    elif mode == "s3":
+        s3 = boto3.client('s3')
+        key_name = f"{S3_PREFIX}uploads_{filename}"
+        try:
+            s3.upload_file(
+                file_path, S3_BUCKET, key_name,
+                ExtraArgs={'ServerSideEncryption': 'AES256'}
+            )
+            os.remove(file_path)
+            return f"S3 → s3://{S3_BUCKET}/{key_name}"
+        except Exception as e:
+            print(f"S3 UPLOAD FAILED: {e}")
+            return None
+
+    elif mode == "google_drive":
+        # Reuse upload_to_drive logic
+        try:
+            service = authenticate_drive()
+            if not service:
+                return None
+            file_metadata = {
+                'name': filename,
+                'parents': [GOOGLE_DRIVE_FOLDER_ID]
+            }
+            media = MediaFileUpload(file_path, mimetype='application/octet-stream')
+            file = service.files().create(
+                body=file_metadata, media_body=media, fields='id'
+            ).execute()
+            os.remove(file_path)
+            return f"DRIVE ID: {file.get('id')}"
+        except Exception as e:
+            print(f"DRIVE UPLOAD FAILED: {e}")
+            return None
+
+    return None
+
+
 def backup_local(db_path, key):
     os.makedirs(BACKUP_LOCAL_DIR, exist_ok=True)
     encrypted_path = encrypt_db(db_path, key)
@@ -482,18 +590,19 @@ def backup_all_tenants():
     db_files = list(INSTANCE_DIR.glob(DB_GLOB))
     if not db_files:
         print("NO TENANT DB FILES FOUND in instance folder!")
-        return
+    else:
+        print(f"FOUND {len(db_files)} DB files:")
+        for f in db_files:
+            print(f" → {f} (exists: {f.exists()})")
+        for db_path in db_files:
+            result = backup_one_file(str(db_path))
+            if result:
+                print(f"SUCCESS: {db_path.name} → {result}")
+            else:
+                print(f"FAILED: {db_path.name}")
 
-    print(f"FOUND {len(db_files)} DB files:")
-    for f in db_files:
-        print(f"  → {f} (exists: {f.exists()})")
-
-    for db_path in db_files:
-        result = backup_one_file(str(db_path))
-        if result:
-            print(f"SUCCESS: {db_path.name} → {result}")
-        else:
-            print(f"FAILED: {db_path.name}")
+    # === BACKUP UPLOADS FOLDER ===
+    backup_uploads()
 
 
 # === SCHEDULE ===
