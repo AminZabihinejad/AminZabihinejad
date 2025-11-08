@@ -38,24 +38,24 @@
             </td>
         </tr>
 
-        <!-- RATE 1: FROM to CAD -->
+        <!-- RATE 1: FROM to CAD (SAVED IN DB) -->
         <tr>
             <td style="padding:8px; font-weight:bold;">Rate 1 ({{ tx.from_currency }} to CAD):</td>
             <td style="padding:8px;">
                 <input type="number" name="rate_from_cad" id="rate_from_cad" step="0.000001"
-                       value="{% if tx.from_currency != 'CAD' %}{{ "%.6f"|format(rate_from_cad) }}{% else %}1.000000{% endif %}"
+                       value="{{ "%.6f"|format(tx.rate_from_cad) }}"
                        {% if tx.from_currency == 'CAD' %}readonly style="background:#f9f9f9;"{% endif %}
                        style="width:140px; padding:6px; font-size:14px;">
                 <span style="margin-left:5px;">CAD</span>
             </td>
         </tr>
 
-        <!-- RATE 2: TO to CAD -->
+        <!-- RATE 2: TO to CAD (SAVED IN DB) -->
         <tr>
             <td style="padding:8px; font-weight:bold;">Rate 2 ({{ tx.to_currency }} to CAD):</td>
             <td style="padding:8px;">
                 <input type="number" name="rate_to_cad" id="rate_to_cad" step="0.000001"
-                       value="{% if tx.to_currency != 'CAD' %}{{ "%.6f"|format(rate_to_cad) }}{% else %}1.000000{% endif %}"
+                       value="{{ "%.6f"|format(tx.rate_to_cad) }}"
                        {% if tx.to_currency == 'CAD' %}readonly style="background:#f9f9f9;"{% endif %}
                        style="width:140px; padding:6px; font-size:14px;">
                 <span style="margin-left:5px;">CAD</span>
@@ -104,11 +104,12 @@
                 <input type="file" name="receipt_file" accept=".pdf" style="padding:6px; font-size:14px;">
                 <br><small style="color:#7f8c8d;">Max 5MB. Replaces existing receipt.</small>
                 {% if tx.receipt_filename %}
-                    <br><a href="{{ url_for('download_pdf', tx_id=tx.id) }}" 
-   target="_blank" 
-   style="color:#27ae60; font-weight:bold; font-size:13px; text-decoration:underline;">
-   Download Current PDF
-</a>
+                    <br>
+                    <a href="{{ url_for('download_pdf', tx_id=tx.id) }}"
+                       target="_blank"
+                       style="color:#27ae60; font-weight:bold; font-size:13px; text-decoration:underline;">
+                       Download Current PDF
+                    </a>
                 {% endif %}
             </td>
         </tr>
@@ -213,14 +214,14 @@ document.addEventListener('DOMContentLoaded', function() {
         profitDisplay.textContent = profit.toFixed(2);
     }
 
-    // Update internal rate only when Rate 1 or Rate 2 changes
+    // Update when rates change
     [rateFrom, rateTo].forEach(el => {
         if (el && !el.readOnly) {
             el.addEventListener('input', updateAll);
         }
     });
 
-    // From Amount only scales To Amount
+    // Update To Amount when From Amount changes
     fromAmount.addEventListener('input', function() {
         const from = parseFloat(fromAmount.value) || 0;
         const currentRate = parseFloat(exchangeRateInput.value) || 0;

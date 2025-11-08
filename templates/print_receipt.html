@@ -7,7 +7,7 @@
         @page { margin: 0; size: 80mm auto; }
         body {
             font-family: 'Courier New', monospace;
-            font-size: 12pt;           /* ← BIGGER, READABLE */
+            font-size: 12pt;
             line-height: 1.5;
             margin: 3mm;
             padding: 0;
@@ -58,47 +58,44 @@
         <p>Receipt #: {{ tx.tx_ref }}</p>
     </div>
     <div class="divider"></div>
-
     <div class="section">
         <div><span class="label">Client:</span> <span class="value">{{ client.first_name }} {{ client.last_name }}</span></div>
         <div><span class="label">Phone:</span> <span class="value">{{ client.phone }}</span></div>
-            </div>
-
+    </div>
     <div class="divider"></div>
-
     <div class="section">
         <div><span class="label">From:</span> <span class="value amount-from">{{ "%.2f"|format(tx.from_amount) }} {{ tx.from_currency }}</span></div>
         <div><span class="label">To:</span> <span class="value amount-to">{{ "%.2f"|format(tx.to_amount) }} {{ tx.to_currency }}</span></div>
 
-        <!-- RATE 1: FROM → CAD -->
-        {% if tx.from_currency == 'CAD' %}
-            <div><span class="label">Rate 1:</span> <span class="value">1 CAD = 1.000000 CAD</span></div>
-        {% else %}
-            {% set gross_cad = tx.from_amount * tx.exchange_rate %}
-            {% set rate_from = gross_cad / tx.from_amount %}
-            <div><span class="label">Rate 1:</span> <span class="value">1 {{ tx.from_currency }} = {{ "%.6f"|format(rate_from) }} CAD</span></div>
-        {% endif %}
+        <!-- RATE 1: FROM → CAD (FROM DB) -->
+        <div><span class="label">Rate 1:</span> 
+            <span class="value">
+                {% if tx.from_currency == 'CAD' %}
+                    1 CAD = 1.000000 CAD
+                {% else %}
+                    1 {{ tx.from_currency }} = {{ "%.6f"|format(tx.rate_from_cad) }} CAD
+                {% endif %}
+            </span>
+        </div>
 
-        <!-- RATE 2: TO → CAD -->
-        {% if tx.to_currency == 'CAD' %}
-            <div><span class="label">Rate 2:</span> <span class="value">1 CAD = 1.000000 CAD</span></div>
-        {% else %}
-            {% set net_cad = tx.from_amount * tx.exchange_rate - flat_fee_cad %}
-            {% set rate_to = net_cad / tx.to_amount %}
-            <div><span class="label">Rate 2:</span> <span class="value">1 {{ tx.to_currency }} = {{ "%.6f"|format(rate_to) }} CAD</span></div>
-        {% endif %}
+        <!-- RATE 2: TO → CAD (FROM DB) -->
+        <div><span class="label">Rate 2:</span> 
+            <span class="value">
+                {% if tx.to_currency == 'CAD' %}
+                    1 CAD = 1.000000 CAD
+                {% else %}
+                    1 {{ tx.to_currency }} = {{ "%.6f"|format(tx.rate_to_cad) }} CAD
+                {% endif %}
+            </span>
+        </div>
     </div>
-
     <div class="divider"></div>
-
     <div class="section">
         <div><span class="label">Flat Fee:</span> <span class="value">${{ "%.2f"|format(flat_fee_cad) }} CAD</span></div>
         <div><span class="label">Rate Fee:</span> <span class="value">${{ "%.2f"|format(profit_cad - flat_fee_cad) }} CAD</span></div>
         <div class="total"><span class="label">Total Fee:</span> <span class="value">${{ "%.2f"|format(profit_cad) }} CAD</span></div>
     </div>
-
-    <div class="divider"></div>
-
+    <div class="divider"></으나
     <div class="footer">
         <p>Thank you for your business!</p>
         <p>Powered by MoneyExchange Pro</p>
@@ -138,7 +135,6 @@ function sendToTelegram(txId) {
     btn.innerHTML = 'Sending...';
     btn.disabled = true;
     btn.classList.add('sending');
-
     fetch(`/send_telegram_receipt/${txId}`, {
         method: 'POST',
         headers: { 'X-Requested-With': 'XMLHttpRequest' }

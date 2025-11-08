@@ -202,6 +202,8 @@ class Transaction(db.Model):
     from_amount = db.Column(db.Float, nullable=False)
     to_amount = db.Column(db.Float, nullable=False)
     exchange_rate = db.Column(db.Float, nullable=False)
+    rate_from_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. USD → CAD
+    rate_to_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. EUR → CAD
     notes = db.Column(db.Text, nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
@@ -841,18 +843,15 @@ def index():
         is_fintrac = 'is_fintrac' in request.form
         status = request.form['status']
 
+        # Get rates
         rate_to_cad = float(request.form.get('rate_to_cad') or 0)
-        if rate_to_cad <= 0:
-            flash('Rate required!', 'danger')
-            return redirect(url_for('index'))
+        rate_from_cad = float(request.form.get('rate_from_cad') or 0)
 
         if fixed_currency == other_currency:
             flash('Same currency!', 'danger')
             return redirect(url_for('index'))
 
-        tx_ref = generate_tx_ref()
-
-        # Determine actual FROM and TO currencies
+        # Determine FROM / TO
         if mode == 'client_fixed':
             from_currency = fixed_currency
             to_currency = other_currency
@@ -862,56 +861,68 @@ def index():
             to_currency = fixed_currency
             to_amount = fixed_amount
 
-        # === CASE 1: CAD involved (one side is CAD) ===
+        # === CASE 1: CAD involved ===
         if from_currency == 'CAD' or to_currency == 'CAD':
             if from_currency == 'CAD':
-                # CAD → X
+                if rate_to_cad <= 0:
+                    flash('Rate required!', 'danger')
+                    return redirect(url_for('index'))
                 remaining = from_amount - FLAT_FEE_CAD
                 if remaining <= 0:
                     flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
                     return redirect(url_for('index'))
                 to_amount = remaining / rate_to_cad
-            else:
-                # X → CAD
-                gross_cad = from_amount * rate_to_cad
+                exchange_rate = to_amount / from_amount
+                rate_from_cad = 1.0
+            else:  # to_currency == 'CAD'
+                if rate_from_cad <= 0:
+                    flash('Rate required!', 'danger')
+                    return redirect(url_for('index'))
+                gross_cad = from_amount * rate_from_cad
                 to_amount = gross_cad - FLAT_FEE_CAD
                 if to_amount <= 0:
                     flash('Amount too small after fee!', 'danger')
                     return redirect(url_for('index'))
+                exchange_rate = to_amount / from_amount
+                rate_to_cad = 1.0
 
-        # === CASE 2: NO CAD (e.g. USD → EUR) ===
+        # === CASE 2: NO CAD (e.g. USD to EUR) ===
         else:
-            rate_from_cad = float(request.form.get('rate_from_cad') or 0)
-            if rate_from_cad <= 0:
-                flash('Second rate required for non-CAD pairs!', 'danger')
+            if rate_from_cad <= 0 or rate_to_cad <= 0:
+                flash('Both rates required for non-CAD pairs!', 'danger')
                 return redirect(url_for('index'))
 
             if mode == 'client_fixed':
-                # Client sells USD → gets EUR
-                gross_cad = from_amount * rate_to_cad        # USD → CAD
+                # Client sells USD to gets EUR
+                gross_cad = from_amount * rate_to_cad  # USD to CAD
                 net_cad = gross_cad - FLAT_FEE_CAD
                 if net_cad <= 0:
                     flash('Amount too small after fee!', 'danger')
                     return redirect(url_for('index'))
-                to_amount = net_cad / rate_from_cad           # CAD → EUR (correct!)
+                to_amount = net_cad / rate_from_cad  # CAD to EUR
             else:
-                # Client wants EUR → pays USD
-                gross_cad = to_amount * rate_from_cad         # EUR → CAD
+                # Client wants EUR to pays USD
+                gross_cad = to_amount * rate_from_cad  # EUR to CAD
                 total_cad = gross_cad + FLAT_FEE_CAD
-                from_amount = total_cad / rate_to_cad         # CAD → USD
+                from_amount = total_cad / rate_to_cad  # CAD to USD
 
-        # === PROFIT CALCULATION ===
+            exchange_rate = to_amount / from_amount
+
+        # === PROFIT ===
         profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
         total_fee = round(profit_cad, 2)
 
-        # === SAVE TRANSACTION ===
+        # === SAVE TO DB ===
+        tx_ref = generate_tx_ref()
         new_tx = Transaction(
             tx_ref=tx_ref,
             from_currency=from_currency,
             to_currency=to_currency,
             from_amount=round(from_amount, 6),
             to_amount=round(to_amount, 6),
-            exchange_rate=rate_to_cad,
+            exchange_rate=round(exchange_rate, 6),
+            rate_from_cad=round(rate_from_cad, 6),   # ← SAVED
+            rate_to_cad=round(rate_to_cad, 6),       # ← SAVED
             notes=f"{notes} (Profit: ${total_fee} CAD)" if notes else f"Profit: ${total_fee} CAD",
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
@@ -930,6 +941,7 @@ def index():
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
     total_volume_usd = 0
     led_color = '#00FF00'
+
     if client:
         six_months_ago = datetime.utcnow() - timedelta(days=180)
         for tx in client.transactions:
@@ -1180,7 +1192,7 @@ def edit_transaction(tx_id):
             notes = request.form.get('notes', '')
             is_fintrac = 'is_fintrac' in request.form
 
-            # === RECALCULATE TO_AMOUNT ===
+            # === RECALCULATE TO_AMOUNT USING EXACT RATES ===
             if tx.from_currency == 'CAD':
                 remaining = from_amount - FLAT_FEE_CAD
                 to_amount = remaining / rate_to_cad if remaining > 0 else 0
@@ -1195,10 +1207,12 @@ def edit_transaction(tx_id):
             exchange_rate = to_amount / from_amount if from_amount > 0 else 0
             profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
 
-            # === UPDATE DB ===
+            # === UPDATE DB WITH EXACT VALUES ===
             tx.from_amount = round(from_amount, 6)
             tx.to_amount = round(to_amount, 6)
             tx.exchange_rate = round(exchange_rate, 6)
+            tx.rate_from_cad = round(rate_from_cad, 6)   # ← SAVE
+            tx.rate_to_cad = round(rate_to_cad, 6)       # ← SAVE
             tx.status = status
             tx.notes = notes
             tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
@@ -1207,26 +1221,22 @@ def edit_transaction(tx_id):
             # === UPLOAD RECEIPT ===
             if 'receipt_file' in request.files:
                 file = request.files['receipt_file']
-                if file and file.filename.endswith('.pdf'):
+                if file and file.filename.lower().endswith('.pdf'):
                     filename = secure_filename(f"receipt_{tx.tx_ref}.pdf")
-                    filepath = os.path.join('receipts', filename)
-                    os.makedirs('receipts', exist_ok=True)
+                    filepath = os.path.join(app.config['RECEIPT_FOLDER'], filename)
                     file.save(filepath)
                     tx.receipt_filename = filename
 
             db.session.commit()
             flash(f'Tx #{tx.tx_ref} updated!', 'success')
+
         except Exception as e:
+            db.session.rollback()
             flash(f'Error: {str(e)}', 'danger')
 
         return redirect(url_for('transactions'))
 
-    # GET: pre-calculate rates
-    gross_cad = tx.from_amount * tx.exchange_rate
-    rate_from_cad = gross_cad / tx.from_amount if tx.from_amount else 0
-    net_cad = gross_cad - FLAT_FEE_CAD
-    rate_to_cad = net_cad / tx.to_amount if tx.to_amount else 0
-
+    # === GET: USE SAVED RATES (NO RECALCULATION) ===
     return render_template(
         'edit_transaction.html',
         tx=tx,
@@ -1234,8 +1244,8 @@ def edit_transaction(tx_id):
         flat_fee_cad=FLAT_FEE_CAD,
         fee_percentage=FEE_PERCENTAGE,
         profit_cad=tx.total_fee_cad or 0,
-        rate_from_cad=rate_from_cad,
-        rate_to_cad=rate_to_cad
+        rate_from_cad=tx.rate_from_cad,   # ← FROM DB
+        rate_to_cad=tx.rate_to_cad        # ← FROM DB
     )
 
 @app.route('/transactions')

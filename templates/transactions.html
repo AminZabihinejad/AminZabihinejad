@@ -94,7 +94,7 @@
                             <!-- ID -->
                             <td style="padding:8px; font-weight:bold;">{{ tx.tx_ref }}</td>
 
-                            <!-- CLIENT NAME + PHONE ONLY -->
+                            <!-- CLIENT NAME + PHONE -->
                             <td style="padding:8px; white-space:nowrap;">
                                 <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
                                 <small style="color:#666;">{{ tx.client.phone }}</small>
@@ -144,15 +144,15 @@
                                 </form>
                             </td>
 
-                            <!-- RECEIPT -->
+                            <!-- RECEIPT (FIXED: download_pdf) -->
                             <td style="padding:8px; text-align:center;">
                                 {% if tx.receipt_filename %}
                                     <a href="{{ url_for('download_pdf', tx_id=tx.id) }}"
-   target="_blank"
-   style="background:#27ae60; color:white; padding:4px 8px; text-decoration:none; border-radius:3px; font-size:10px;"
-   title="Download PDF">
-   PDF
-</a>
+                                       target="_blank"
+                                       style="background:#27ae60; color:white; padding:4px 8px; text-decoration:none; border-radius:3px; font-size:10px;"
+                                       title="Download PDF">
+                                        PDF
+                                    </a>
                                 {% else %}
                                     <span style="color:#ccc; font-size:10px;">—</span>
                                 {% endif %}
