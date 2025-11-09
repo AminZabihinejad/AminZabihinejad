@@ -23,10 +23,10 @@
         <strong>Client Filter:</strong>
         {% if session.selected_client_id %}
             <span style="color:#856404;">{{ session.selected_client_name }} Selected</span>
-            <a href="{{ url_for('index') }}" style="color:#856404;">[Change Client]</a>
+            <a href="{{ url_for('dashboard') }}" style="color:#856404;">[Change Client]</a>
         {% else %}
             <span style="color:#856404;">ALL CLIENTS</span>
-            <a href="{{ url_for('index') }}" style="color:#856404;">[Select Client]</a>
+            <a href="{{ url_for('dashboard') }}" style="color:#856404;">[Select Client]</a>
         {% endif %}
     </div>
 
@@ -248,11 +248,11 @@
     {% else %}
         <div style="text-align:center; padding:40px; color:#777; background:#f8f9fa; border-radius:8px;">
             <h3>No transactions found</h3>
-            <p>Select a client and create transactions from <a href="{{ url_for('index') }}">Overview</a></p>
+            <p>Select a client and create transactions from <a href="{{ url_for('dashboard') }}">Overview</a></p>
         </div>
     {% endif %}
 
     <div style="margin-top:30px; text-align:center;">
-        <a href="{{ url_for('index') }}" style="font-size:16px; color:#3498db;">Back to Overview</a>
+        <a href="{{ url_for('dashboard') }}" style="font-size:16px; color:#3498db;">Back to Overview</a>
     </div>
 {% endblock %}

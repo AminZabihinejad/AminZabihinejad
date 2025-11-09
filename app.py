@@ -748,7 +748,7 @@ def edit_exchange_name():
 def login():
     # If already logged in → go to dashboard
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
     if request.method == 'POST':
         username = request.form.get('username')
@@ -779,8 +779,7 @@ def login():
             # === PROPER REDIRECT WITH next SUPPORT ===
             next_page = request.args.get('next')
             if not next_page or not next_page.startswith('/'):
-                next_page = url_for('index')
-
+                next_page = url_for('dashboard')  # ← FIXED
             return redirect(next_page)
 
         else:
@@ -923,9 +922,15 @@ def create_tenant():
 
     return redirect(url_for('profile'))
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
+def root():
+    if current_user.is_authenticated:
+        logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
-def index():
+def dashboard():
     global FEE_PERCENTAGE, FLAT_FEE_CAD
 
     # === UPDATE FEES ===
@@ -936,7 +941,7 @@ def index():
             flash(f'Fees updated: {FEE_PERCENTAGE*100:.1f}% + ${FLAT_FEE_CAD:.2f} CAD', 'success')
         except ValueError:
             flash('Invalid fee values!', 'danger')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
     # === REQUIRE CLIENT ===
     if request.method == 'POST' and not session.get('selected_client_id'):
@@ -959,7 +964,7 @@ def index():
 
         if fixed_currency == other_currency:
             flash('Same currency!', 'danger')
-            return redirect(url_for('index'))
+            return redirect(url_for('dashboard'))
 
         # Determine FROM / TO
         if mode == 'client_fixed':
@@ -976,23 +981,23 @@ def index():
             if from_currency == 'CAD':
                 if rate_to_cad <= 0:
                     flash('Rate required!', 'danger')
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
                 remaining = from_amount - FLAT_FEE_CAD
                 if remaining <= 0:
                     flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
                 to_amount = remaining / rate_to_cad
                 exchange_rate = to_amount / from_amount
                 rate_from_cad = 1.0
             else:  # to_currency == 'CAD'
                 if rate_from_cad <= 0:
                     flash('Rate required!', 'danger')
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
                 gross_cad = from_amount * rate_from_cad
                 to_amount = gross_cad - FLAT_FEE_CAD
                 if to_amount <= 0:
                     flash('Amount too small after fee!', 'danger')
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
                 exchange_rate = to_amount / from_amount
                 rate_to_cad = 1.0
 
@@ -1000,7 +1005,7 @@ def index():
         else:
             if rate_from_cad <= 0 or rate_to_cad <= 0:
                 flash('Both rates required for non-CAD pairs!', 'danger')
-                return redirect(url_for('index'))
+                return redirect(url_for('dashboard'))
 
             if mode == 'client_fixed':
                 # Client sells USD to gets EUR
@@ -1008,7 +1013,7 @@ def index():
                 net_cad = gross_cad - FLAT_FEE_CAD
                 if net_cad <= 0:
                     flash('Amount too small after fee!', 'danger')
-                    return redirect(url_for('index'))
+                    return redirect(url_for('dashboard'))
                 to_amount = net_cad / rate_from_cad  # CAD to EUR
             else:
                 # Client wants EUR to pays USD
@@ -1045,7 +1050,7 @@ def index():
         db.session.commit()
 
         flash(f'Tx {tx_ref} created!', 'success')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
     # === LOAD DATA FOR RENDER ===
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
@@ -1191,7 +1196,7 @@ def manage_tenants():
 def switch_tenant():
     if not current_user.is_super_admin:
         flash('Super admin only!', 'danger')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
     tenant_id = request.form.get('tenant_id')
     tenant = Tenant.query.get(int(tenant_id))
@@ -1202,7 +1207,7 @@ def switch_tenant():
     session['tenant_id'] = tenant.id
     session.pop('selected_client_id', None)
     flash(f'Switched to {tenant.name}', 'success')
-    return redirect(url_for('index'))
+    return redirect(url_for('dashboard'))
 
 @app.route('/toggle_tenant/<int:tenant_id>', methods=['POST'])
 @login_required
@@ -1274,7 +1279,7 @@ def select_customer(client_id):
     session['selected_client_id'] = client.id
     session['selected_client_name'] = f"{client.first_name} {client.last_name}"
     flash('Client selected!', 'success')
-    return redirect(url_for('index'))
+    return redirect(url_for('dashboard'))
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 @login_required
@@ -1716,7 +1721,7 @@ def change_password():
         current_user.requires_password_change = False
         db.session.commit()
         flash('Password changed!', 'success')
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
 
     return render_template('change_password.html', first_time=first_time)
 
