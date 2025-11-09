@@ -1861,5 +1861,13 @@ def download_receipt(tx_id):
     """Legacy alias — redirects to download_pdf"""
     return redirect(url_for('download_pdf', tx_id=tx_id))
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(
+        app.static_folder,
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
+    )
+
 if __name__ == '__main__':
     app.run(debug=True)

@@ -1,177 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<style>
-.avatar { font-size: 1rem; }
-.table-hover tbody tr:hover { background-color: #f8f9fa !important; }
-.btn-group .btn { font-size: 0.825rem; padding: 0.25rem 0.5rem; }
-.btn-group .btn i { font-size: 0.9rem; }
-.table th, .table td { vertical-align: middle; }
-</style>
-
-<!-- IN <head> -->
-<link id="theme" rel="stylesheet" href="{{ url_for('static', filename='css/light.css') }}">
-
-<style>
-    .theme-toggle {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 9999;
-        background: #333;
-        color: white;
-        border: none;
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        font-size: 24px;
-        cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-        transition: all 0.3s;
-    }
-    .theme-toggle:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.6);
-    }
-</style>
-
-<!-- BEFORE </body> -->
-<button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
-    🌙
-</button>
-
-<script>
-function toggleTheme() {
-    const theme = document.getElementById('theme');
-    const button = document.querySelector('.theme-toggle');
-    const isDark = theme.href.includes('dark.css');
-
-    if (isDark) {
-        theme.href = '{{ url_for('static', filename='css/light.css') }}';
-        button.innerHTML = '🌙';
-        localStorage.setItem('theme', 'light');
-    } else {
-        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
-        button.innerHTML = '☀️';
-        localStorage.setItem('theme', 'dark');
-    }
-}
-
-window.onload = function() {
-    const saved = localStorage.getItem('theme');
-    const theme = document.getElementById('theme');
-    const button = document.querySelector('.theme-toggle');
-
-    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
-        button.innerHTML = '☀️';
-    }
-}
-</script>
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Piggy Bank{% endblock %}</title>
+
+    <!-- THEME CSS (MOVED INSIDE <head>) -->
+    <link id="theme" rel="stylesheet" href="{{ url_for('static', filename='css/light.css') }}">
+
+    <!-- FAVICON - FIXED (WORKS IN ADDRESS BAR) -->
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+
+    {% block head %}{% endblock %}
+
+    <!-- STYLES (UNCHANGED) -->
     <style>
         * { box-sizing: border-box; }
         body { font-family: Arial; margin: 0; padding: 0; background: #f8f9fa; }
-        .header { 
-            background: #34495e; 
-            color: white; 
-            padding: 15px; 
-            text-align: center; 
+        .avatar { font-size: 1rem; }
+        .table-hover tbody tr:hover { background-color: #f8f9fa !important; }
+        .btn-group .btn { font-size: 0.825rem; padding: 0.25rem 0.5rem; }
+        .btn-group .btn i { font-size: 0.9rem; }
+        .table th, .table td { vertical-align: middle; }
+        .header {
+            background: #34495e;
+            color: white;
+            padding: 15px;
+            text-align: center;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        .header h1 { 
-            margin: 0; 
-            font-size: 28px; 
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
-        .nav { 
-            background: #34495e; 
-            padding: 0; 
-            display: flex; 
-            flex-wrap: wrap; 
+        .nav {
+            background: #34495e;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
             justify-content: center;
         }
-        .nav a { 
-            color: white; 
-            padding: 15px 20px; 
-            text-decoration: none; 
-            font-size: 16px; 
+        .nav a {
+            color: white;
+            padding: 15px 20px;
+            text-decoration: none;
+            font-size: 16px;
             transition: background 0.3s;
         }
         .nav a:hover { background: #2c3e50; }
         .nav a.active { background: #3498db; color: #fff; }
-        .container { 
-            max-width: 1200px; 
-            margin: 20px auto; 
-            padding: 20px; 
-            background: white; 
-            border-radius: 8px; 
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
         @media (max-width: 768px) {
             .nav { flex-direction: column; }
             .nav a { padding: 12px; text-align: center; }
         }
+        .theme-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            background: #333;
+            color: white;
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            transition: all 0.3s;
+        }
+        .theme-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+        }
     </style>
 </head>
 
-<button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
-    🌙
-</button>
-
-<script>
-function toggleTheme() {
-    const theme = document.getElementById('theme');
-    const button = document.querySelector('.theme-toggle');
-    const isDark = theme.href.includes('dark.css');
-
-    if (isDark) {
-        theme.href = '{{ url_for('static', filename='css/light.css') }}';
-        button.innerHTML = '🌙';
-        localStorage.setItem('theme', 'light');
-    } else {
-        theme.href = '{{ url_for('static', filename='css/dark.css') }}';
-        button.innerHTML = '☀️';
-        localStorage.setItem('theme', 'dark');
-    }
-}
-
-// LOAD SAVED THEME
-window.onload = function() {
-    const saved = localStorage.getItem('theme');
-    const theme = document.getElementById('theme');
-    const button = document.querySelector('.theme-toggle');
-
-    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        theme.href = '{{ url_for('static', filename='dark.css') }}';
-        button.innerHTML = '☀️';
-    }
-}
-</script>
-
-
-
 <body>
     <div class="header">
-        <h1>🐷 <span style="color: #ff69b4;">Piggy Bank</span></h1>
+        <h1>Piggy Bank</h1>
     </div>
-    
-   <nav style="background:#2c3e50; padding:15px;">
-    <a href="{{ url_for('dashboard') }}" style="color:white; margin-right:20px; font-size:18px;">🏠 Dashboard</a>
-    <a href="{{ url_for('customers') }}" style="color:white; margin-right:20px; font-size:18px;">👥 Customers</a>
-    <a href="{{ url_for('transactions') }}" style="color:white; margin-right:20px;">📋 Transactions</a>
-	<a href="{{ url_for('reports') }}"style="color:white; margin-right:20px;">📊 Reports</a>
-    <a href="{{ url_for('deposit') }}" style="color:white; margin-right:20px;">💰 Deposit</a>
-    <a href="{{ url_for('profile') }}" style="color:white; margin-right:20px;">👤Profile {{ session.username }}</a>
-    <a href="{{ url_for('logout') }}" style="color:white;">🚪 Logout</a>
-	</nav>
+   
+    <nav style="background:#2c3e50; padding:15px;">
+        <a href="{{ url_for('dashboard') }}" style="color:white; margin-right:20px; font-size:18px;">Dashboard</a>
+        <a href="{{ url_for('customers') }}" style="color:white; margin-right:20px; font-size:18px;">Customers</a>
+        <a href="{{ url_for('transactions') }}" style="color:white; margin-right:20px;">Transactions</a>
+        <a href="{{ url_for('reports') }}" style="color:white; margin-right:20px;">Reports</a>
+        <a href="{{ url_for('deposit') }}" style="color:white; margin-right:20px;">Deposit</a>
+        <a href="{{ url_for('profile') }}" style="color:white; margin-right:20px;">Profile {{ session.username }}</a>
+        <a href="{{ url_for('logout') }}" style="color:white;">Logout</a>
+    </nav>
 
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+
+    <!-- THEME TOGGLE BUTTON (ONLY ONCE) -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+        Moon
+    </button>
+
+    <!-- THEME TOGGLE SCRIPT (ONLY ONCE) -->
+    <script>
+    function toggleTheme() {
+        const theme = document.getElementById('theme');
+        const button = document.querySelector('.theme-toggle');
+        const isDark = theme.href.includes('dark.css');
+        if (isDark) {
+            theme.href = '{{ url_for('static', filename='css/light.css') }}';
+            button.innerHTML = 'Moon';
+            localStorage.setItem('theme', 'light');
+        } else {
+            theme.href = '{{ url_for('static', filename='css/dark.css') }}';
+            button.innerHTML = 'Sun';
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    window.onload = function() {
+        const saved = localStorage.getItem('theme');
+        const theme = document.getElementById('theme');
+        const button = document.querySelector('.theme-toggle');
+        if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            theme.href = '{{ url_for('static', filename='css/dark.css') }}';
+            button.innerHTML = 'Sun';
+        }
+    }
+    </script>
 </body>
 </html>
