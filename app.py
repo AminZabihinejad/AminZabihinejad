@@ -216,6 +216,8 @@ class Transaction(db.Model):
     payment_method_from = db.Column(db.String(50), nullable=True, default='Cash')
     payment_method_to = db.Column(db.String(50), nullable=True, default='Cash')
     payment_note = db.Column(db.Text, nullable=True)
+    source_of_funds = db.Column(db.String(100), nullable=True)
+    transaction_reason = db.Column(db.String(100), nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
     receipt_filename = db.Column(db.String(100))
@@ -260,6 +262,12 @@ def add_transaction_columns(engine):
             if 'payment_note' not in transaction_columns:
                 conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_note TEXT'))
                 print("Added payment_note column to transaction table")
+            if 'source_of_funds' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN source_of_funds VARCHAR(100)'))
+                print("Added source_of_funds column to transaction table")
+            if 'transaction_reason' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN transaction_reason VARCHAR(100)'))
+                print("Added transaction_reason column to transaction table")
     except Exception as e:
         print(f"Error adding transaction columns (may already exist): {e}")
 
@@ -1207,6 +1215,8 @@ def dashboard():
         payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
         payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
         payment_note = request.form.get('payment_note', '').strip() or None
+        source_of_funds = request.form.get('source_of_funds', '').strip() or None
+        transaction_reason = request.form.get('transaction_reason', '').strip() or None
 
         # === SAVE TO DB ===
         tx_ref = generate_tx_ref()
@@ -1223,6 +1233,8 @@ def dashboard():
             payment_method_from=payment_method_from,
             payment_method_to=payment_method_to,
             payment_note=payment_note,
+            source_of_funds=source_of_funds,
+            transaction_reason=transaction_reason,
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status,
@@ -1560,6 +1572,8 @@ def edit_transaction(tx_id):
             tx.payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
             tx.payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
             tx.payment_note = request.form.get('payment_note', '').strip() or None
+            tx.source_of_funds = request.form.get('source_of_funds', '').strip() or None
+            tx.transaction_reason = request.form.get('transaction_reason', '').strip() or None
             tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
             tx.total_fee_cad = round(profit_cad, 2)
 
