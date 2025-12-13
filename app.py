@@ -1218,6 +1218,37 @@ def dashboard():
         source_of_funds = request.form.get('source_of_funds', '').strip() or None
         transaction_reason = request.form.get('transaction_reason', '').strip() or None
 
+        # === VALIDATION FOR TRANSACTIONS OVER 3000 CAD ===
+        # Calculate transaction value in CAD
+        transaction_cad_value = 0
+
+        if from_currency == 'CAD':
+            transaction_cad_value = from_amount
+        elif to_currency == 'CAD':
+            transaction_cad_value = to_amount  # Final CAD amount after fees
+        else:
+            # For non-CAD pairs, convert the larger amount to CAD
+            transaction_cad_value = max(from_amount * rate_from_cad, to_amount * rate_to_cad)
+
+        # Require fields for transactions OVER 3000 CAD
+        if transaction_cad_value > 3000:
+            print(f"DEBUG: Validating small transaction (${transaction_cad_value:.2f})")
+            print(f"DEBUG: Raw source_of_funds: {repr(request.form.get('source_of_funds'))}")
+            print(f"DEBUG: Raw transaction_reason: {repr(request.form.get('transaction_reason'))}")
+
+            source_empty = not source_of_funds or source_of_funds.strip() == ''
+            reason_empty = not transaction_reason or transaction_reason.strip() == ''
+
+            print(f"DEBUG: Processed source_of_funds: {repr(source_of_funds)} (empty: {source_empty})")
+            print(f"DEBUG: Processed transaction_reason: {repr(transaction_reason)} (empty: {reason_empty})")
+
+            if source_empty or reason_empty:
+                print("DEBUG: BLOCKING - fields are empty")
+                flash(f'❌ REQUIRED: For transactions over $3000 CAD (this transaction: ${transaction_cad_value:.2f}), Source of Funds and Reason of Transaction are required.', 'danger')
+                return redirect(url_for('dashboard'))
+            else:
+                print("DEBUG: ALLOWING - fields are filled")
+
         # === SAVE TO DB ===
         tx_ref = generate_tx_ref()
         new_tx = Transaction(
@@ -1560,6 +1591,37 @@ def edit_transaction(tx_id):
 
             exchange_rate = to_amount / from_amount if from_amount > 0 else 0
             profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
+
+            # === VALIDATION FOR TRANSACTIONS OVER 3000 CAD ===
+            # Calculate transaction value in CAD
+            transaction_cad_value = 0
+
+            if tx.from_currency == 'CAD':
+                transaction_cad_value = from_amount
+            elif tx.to_currency == 'CAD':
+                transaction_cad_value = to_amount  # Final CAD amount after fees
+            else:
+                # For non-CAD pairs, convert the larger amount to CAD
+                transaction_cad_value = max(from_amount * rate_from_cad, to_amount * rate_to_cad)
+
+            print(f"EDIT VALIDATION: Transaction CAD value: {transaction_cad_value}")
+
+            # Require fields for transactions OVER 3000 CAD
+            if transaction_cad_value > 3000:
+                source_of_funds = request.form.get('source_of_funds', '').strip() or None
+                transaction_reason = request.form.get('transaction_reason', '').strip() or None
+
+                source_empty = not source_of_funds or source_of_funds.strip() == ''
+                reason_empty = not transaction_reason or transaction_reason.strip() == ''
+
+                if source_empty or reason_empty:
+                    print("EDIT VALIDATION: BLOCKING EDIT - required fields missing for large transaction")
+                    flash(f'❌ REQUIRED: For transactions over $3000 CAD, Source of Funds and Reason of Transaction are required.', 'danger')
+                    return redirect(url_for('edit_transaction', tx_id=tx_id))
+                else:
+                    print("EDIT VALIDATION: Large transaction edit validated")
+            else:
+                print(f"EDIT VALIDATION: Small transaction (${transaction_cad_value}), no validation required")
 
             # === UPDATE DB WITH EXACT VALUES ===
             tx.from_amount = round(from_amount, 6)
