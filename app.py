@@ -990,16 +990,20 @@ def dashboard():
                 exchange_rate = to_amount / from_amount
                 rate_from_cad = 1.0
             else:  # to_currency == 'CAD'
-                if rate_from_cad <= 0:
+                # When to_currency is CAD, rate_to_cad from form is the rate from from_currency to CAD
+                # The form always sends rate_to_cad for the non-CAD currency to CAD rate
+                if rate_to_cad <= 0:
                     flash('Rate required!', 'danger')
                     return redirect(url_for('dashboard'))
-                gross_cad = from_amount * rate_from_cad
+                # Use rate_to_cad (form field) as the rate from from_currency to CAD
+                rate_from_cad = rate_to_cad  # Store: from_currency -> CAD rate
+                gross_cad = from_amount * rate_to_cad
                 to_amount = gross_cad - FLAT_FEE_CAD
                 if to_amount <= 0:
                     flash('Amount too small after fee!', 'danger')
                     return redirect(url_for('dashboard'))
                 exchange_rate = to_amount / from_amount
-                rate_to_cad = 1.0
+                rate_to_cad = 1.0  # CAD to CAD is 1.0
 
         # === CASE 2: NO CAD (e.g. USD to EUR) ===
         else:
