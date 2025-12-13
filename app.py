@@ -167,6 +167,8 @@ class Client(db.Model):
     city = db.Column(db.String(100), nullable=False)
     province = db.Column(db.String(10), nullable=False)
     postal_code = db.Column(db.String(10), nullable=True)
+    country = db.Column(db.String(100), nullable=False)
+    job = db.Column(db.String(100), nullable=True)
     risk_level = db.Column(db.String(20), default='low risk')
     br_status = db.Column(db.String(20), default='active')  # active, inactive, pending
     notes = db.Column(db.Text)
@@ -221,6 +223,26 @@ class Transaction(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
 
+# === ADD NEW COLUMNS TO CLIENT TABLE ===
+def add_client_columns(engine):
+    """Add country and job columns to client table if they don't exist"""
+    try:
+        inspector = sa.inspect(engine)
+        if 'client' not in inspector.get_table_names():
+            return
+        
+        client_columns = [c['name'] for c in inspector.get_columns('client')]
+        
+        with engine.begin() as conn:
+            if 'country' not in client_columns:
+                conn.execute(text("ALTER TABLE client ADD COLUMN country VARCHAR(100) NOT NULL DEFAULT 'Canada'"))
+                print("Added country column to client table")
+            if 'job' not in client_columns:
+                conn.execute(text("ALTER TABLE client ADD COLUMN job VARCHAR(100)"))
+                print("Added job column to client table")
+    except Exception as e:
+        print(f"Error adding client columns (may already exist): {e}")
+
 # === MIGRATE CLIENT TABLE (MAKE OPTIONAL FIELDS NULLABLE) ===
 def migrate_client_table(engine):
     """Migrate client table to make email, civic_number, and postal_code nullable"""
@@ -267,6 +289,8 @@ def migrate_client_table(engine):
                     city VARCHAR(100) NOT NULL,
                     province VARCHAR(10) NOT NULL,
                     postal_code VARCHAR(10),
+                    country VARCHAR(100) NOT NULL,
+                    job VARCHAR(100),
                     risk_level VARCHAR(20),
                     br_status VARCHAR(20),
                     notes TEXT,
@@ -333,6 +357,8 @@ def set_tenant_db():
         app.config['SQLALCHEMY_DATABASE_URI'] = new_uri
         db.session.bind = db.create_engine(new_uri, pool_pre_ping=True)
         db.create_all()
+        # Add new columns if needed
+        add_client_columns(db.engine)
         # Run migration if needed
         migrate_client_table(db.engine)
 
@@ -383,8 +409,9 @@ if not DEFAULT_DB_FILE.exists():
             print("Default tenant exists.")
 else:
     print("Default DB exists.")
-    # Run migration on existing database
+    # Run migrations on existing database
     with app.app_context():
+        add_client_columns(db.engine)
         migrate_client_table(db.engine)
 
 # === WKHTMLTOPDF ===
@@ -1404,6 +1431,8 @@ def edit_client(client_id):
         client.city = request.form['city']
         client.province = request.form['province']
         client.postal_code = request.form.get('postal_code', '').strip() or None
+        client.country = request.form['country']
+        client.job = request.form.get('job', '').strip() or None
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')

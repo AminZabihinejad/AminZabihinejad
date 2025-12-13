@@ -54,6 +54,12 @@
             <td>Postal:</td>
             <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" placeholder="M5V 2T6" style="width:90px;"></td>
         </tr>
+        <tr>
+            <td>Country <span style="color:red;">*</span>:</td>
+            <td><input name="country" value="{{ client.country if client else '' }}" required style="width:150px;"></td>
+            <td>Job:</td>
+            <td><input name="job" value="{{ client.job if client else '' }}" style="width:180px;"></td>
+        </tr>
     </table>
 </div>
 
