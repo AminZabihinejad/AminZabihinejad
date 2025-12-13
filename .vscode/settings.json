@@ -1,0 +1,9 @@
+{
+    // Python interpreter path
+    // Using the virtual environment in this project
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    
+    // Alternative: Use system Python installation
+    // "python.defaultInterpreterPath": "C:\\Users\\aminz\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
+}
+
