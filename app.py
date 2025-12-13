@@ -159,14 +159,14 @@ class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), nullable=True)
     phone = db.Column(db.String(20), nullable=False)
     apartment = db.Column(db.String(20))
-    civic_number = db.Column(db.String(20), nullable=False)
+    civic_number = db.Column(db.String(20), nullable=True)
     street = db.Column(db.String(200), nullable=False)
     city = db.Column(db.String(100), nullable=False)
     province = db.Column(db.String(10), nullable=False)
-    postal_code = db.Column(db.String(10), nullable=False)
+    postal_code = db.Column(db.String(10), nullable=True)
     risk_level = db.Column(db.String(20), default='low risk')
     br_status = db.Column(db.String(20), default='active')  # active, inactive, pending
     notes = db.Column(db.Text)
@@ -221,6 +221,104 @@ class Transaction(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
 
+# === MIGRATE CLIENT TABLE (MAKE OPTIONAL FIELDS NULLABLE) ===
+def migrate_client_table(engine):
+    """Migrate client table to make email, civic_number, and postal_code nullable"""
+    try:
+        inspector = sa.inspect(engine)
+        if 'client' not in inspector.get_table_names():
+            return
+        
+        # Check SQL schema directly for NOT NULL constraints
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='client'"))
+            sql_schema = result.fetchone()
+            if not sql_schema or not sql_schema[0]:
+                return
+            
+            schema_sql = sql_schema[0].upper()
+            # Check if columns have NOT NULL constraint in the schema
+            needs_migration = False
+            if 'EMAIL VARCHAR(120) NOT NULL' in schema_sql or 'EMAIL VARCHAR(120)NOT NULL' in schema_sql:
+                needs_migration = True
+            if 'CIVIC_NUMBER VARCHAR(20) NOT NULL' in schema_sql or 'CIVIC_NUMBER VARCHAR(20)NOT NULL' in schema_sql:
+                needs_migration = True
+            if 'POSTAL_CODE VARCHAR(10) NOT NULL' in schema_sql or 'POSTAL_CODE VARCHAR(10)NOT NULL' in schema_sql:
+                needs_migration = True
+        
+        if not needs_migration:
+            return
+        
+        print("Migrating client table to make email, civic_number, and postal_code nullable...")
+        
+        with engine.begin() as conn:  # Use begin() for transaction
+            # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+            # Step 1: Create new table with correct schema
+            conn.execute(text("""
+                CREATE TABLE client_new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    first_name VARCHAR(100) NOT NULL,
+                    last_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(120),
+                    phone VARCHAR(20) NOT NULL,
+                    apartment VARCHAR(20),
+                    civic_number VARCHAR(20),
+                    street VARCHAR(200) NOT NULL,
+                    city VARCHAR(100) NOT NULL,
+                    province VARCHAR(10) NOT NULL,
+                    postal_code VARCHAR(10),
+                    risk_level VARCHAR(20),
+                    br_status VARCHAR(20),
+                    notes TEXT,
+                    created_at DATETIME,
+                    telegram_id VARCHAR(50),
+                    id1_type VARCHAR(50),
+                    id1_issued_by VARCHAR(100),
+                    id1_number VARCHAR(50),
+                    id1_expiry_date DATE,
+                    id1_filename VARCHAR(255),
+                    id1_filesize INTEGER,
+                    id1_last_download DATETIME,
+                    id2_type VARCHAR(50),
+                    id2_issued_by VARCHAR(100),
+                    id2_number VARCHAR(50),
+                    id2_expiry_date DATE,
+                    id2_filename VARCHAR(255),
+                    id2_filesize INTEGER,
+                    id2_last_download DATETIME,
+                    id3_type VARCHAR(50),
+                    id3_issued_by VARCHAR(100),
+                    id3_number VARCHAR(50),
+                    id3_expiry_date DATE,
+                    id3_filename VARCHAR(255),
+                    id3_filesize INTEGER,
+                    id3_last_download DATETIME,
+                    tenant_id INTEGER NOT NULL,
+                    FOREIGN KEY(tenant_id) REFERENCES tenant (id)
+                )
+            """))
+            
+            # Step 2: Copy data from old table
+            conn.execute(text("""
+                INSERT INTO client_new 
+                SELECT * FROM client
+            """))
+            
+            # Step 3: Drop old table
+            conn.execute(text("DROP TABLE client"))
+            
+            # Step 4: Rename new table
+            conn.execute(text("ALTER TABLE client_new RENAME TO client"))
+            
+            print("Client table migration completed successfully!")
+    except Exception as e:
+        # Check if migration already completed (table might already have nullable columns)
+        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+            print("Migration may have already been applied.")
+        else:
+            print(f"Migration error: {e}")
+            raise  # Re-raise if it's a real error
+
 # === DYNAMIC DB SWITCH (CORRECT) ===
 @app.before_request
 def set_tenant_db():
@@ -235,6 +333,8 @@ def set_tenant_db():
         app.config['SQLALCHEMY_DATABASE_URI'] = new_uri
         db.session.bind = db.create_engine(new_uri, pool_pre_ping=True)
         db.create_all()
+        # Run migration if needed
+        migrate_client_table(db.engine)
 
 # === USER LOADER ===
 @login_manager.user_loader
@@ -283,6 +383,9 @@ if not DEFAULT_DB_FILE.exists():
             print("Default tenant exists.")
 else:
     print("Default DB exists.")
+    # Run migration on existing database
+    with app.app_context():
+        migrate_client_table(db.engine)
 
 # === WKHTMLTOPDF ===
 if os.name == 'nt':
@@ -1294,13 +1397,13 @@ def edit_client(client_id):
         if not client: client = Client(tenant_id=session.get('tenant_id'))
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
-        client.email = request.form['email']
+        client.email = request.form.get('email', '').strip() or None
         client.phone = request.form['phone']
-        client.civic_number = request.form['civic_number']
+        client.civic_number = request.form.get('civic_number', '').strip() or None
         client.street = request.form['street']
         client.city = request.form['city']
         client.province = request.form['province']
-        client.postal_code = request.form['postal_code']
+        client.postal_code = request.form.get('postal_code', '').strip() or None
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
