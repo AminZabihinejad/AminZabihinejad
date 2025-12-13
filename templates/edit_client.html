@@ -100,6 +100,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id1_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id1_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id1_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id1_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id1_type == 'other' }}>Other</option>
                     </select>
@@ -148,6 +149,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id2_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id2_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id2_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id2_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id2_type == 'other' }}>Other</option>
                     </select>
@@ -196,6 +198,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id3_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id3_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id3_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id3_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id3_type == 'other' }}>Other</option>
                     </select>
@@ -242,6 +245,7 @@
             <td style="width:130px;"><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
             <td>
                 <select name="risk_level" required style="width:200px;">
+                    <option value="no risk" {{ 'selected' if client and client.risk_level == 'no risk' }}>No Risk</option>
                     <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>Low Risk</option>
                     <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>Medium Risk</option>
                     <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>High Risk</option>
@@ -271,10 +275,12 @@
 <div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h4>Client Summary</h4>
     <p><strong>Risk:</strong> 
-        {% if client.risk_level == 'low risk' %}<span style="color:green;">LOW RISK</span>
+        {% if client.risk_level == 'no risk' %}<span style="color:#27ae60; font-weight:bold;">NO RISK</span>
+        {% elif client.risk_level == 'low risk' %}<span style="color:green;">LOW RISK</span>
         {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">MEDIUM RISK</span>
         {% elif client.risk_level == 'high risk' %}<span style="color:red;">HIGH RISK</span>
-        {% else %}<span style="color:red; font-weight:bold;">ON HOLD</span>{% endif %}
+        {% elif client.risk_level == 'on hold' %}<span style="color:red; font-weight:bold;">ON HOLD</span>
+        {% else %}<span style="color:#95a5a6;">—</span>{% endif %}
     </p>
     <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
     <p><strong>Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
@@ -295,7 +301,7 @@
         <strong>IDs:</strong><br>
         {% if client.id1_number %}
             <small>
-                {{ client.id1_type or 'ID' }} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }}
+                {% if client.id1_type == 'pr_card' %}PR Card{% elif client.id1_type == 'driver_license' %}Driver License{% elif client.id1_type == 'insurance_card' %}Insurance Card{% elif client.id1_type == 'passport' %}Passport{% elif client.id1_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }}
                 {% if client.id1_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=1) }}">file</a>)
                 {% endif %}
@@ -306,7 +312,7 @@
         {% endif %}
         {% if client.id2_number %}
             <small>
-                {{ client.id2_type or 'ID' }} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }}
+                {% if client.id2_type == 'pr_card' %}PR Card{% elif client.id2_type == 'driver_license' %}Driver License{% elif client.id2_type == 'insurance_card' %}Insurance Card{% elif client.id2_type == 'passport' %}Passport{% elif client.id2_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }}
                 {% if client.id2_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=2) }}">file</a>)
                 {% endif %}
@@ -317,7 +323,7 @@
         {% endif %}
         {% if client.id3_number %}
             <small>
-                {{ client.id3_type or 'ID' }} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }}
+                {% if client.id3_type == 'pr_card' %}PR Card{% elif client.id3_type == 'driver_license' %}Driver License{% elif client.id3_type == 'insurance_card' %}Insurance Card{% elif client.id3_type == 'passport' %}Passport{% elif client.id3_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }}
                 {% if client.id3_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=3) }}">file</a>)
                 {% endif %}

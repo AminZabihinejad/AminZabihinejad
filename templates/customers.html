@@ -13,6 +13,7 @@
             <label>Risk:</label>
             <select name="risk_level" style="margin:0 8px; padding:6px; width:110px; border:1px solid #ddd; border-radius:4px;">
                 <option value="">All Risks</option>
+                <option value="no risk" {{ 'selected' if request.args.get('risk_level') == 'no risk' }}>No Risk</option>
                 <option value="low risk" {{ 'selected' if request.args.get('risk_level') == 'low risk' }}>Low</option>
                 <option value="medium risk" {{ 'selected' if request.args.get('risk_level') == 'medium risk' }}>Med</option>
                 <option value="high risk" {{ 'selected' if request.args.get('risk_level') == 'high risk' }}>High</option>
@@ -121,7 +122,9 @@
 
             <!-- RISK -->
             <td style="padding:8px; text-align:center; font-weight:bold;">
-                {% if data.client.risk_level == 'low risk' %}
+                {% if data.client.risk_level == 'no risk' %}
+                    <span style="color:#27ae60; font-weight:bold;">NO RISK</span>
+                {% elif data.client.risk_level == 'low risk' %}
                     <span style="color:green;">LOW</span>
                 {% elif data.client.risk_level == 'medium risk' %}
                     <span style="color:orange;">MED</span>
