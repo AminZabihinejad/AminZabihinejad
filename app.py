@@ -50,7 +50,7 @@ load_dotenv()
 
 
 # === CONFIGURATION ===
-BACKUP_MODE = "google_drive"          # "local" | "email" | "s3" | "google_drive"
+BACKUP_MODE = "local"          # "local" | "email" | "s3" | "google_drive"
 BACKUP_LOCAL_DIR = "backups"
 BACKUP_EMAIL_RECIPIENT = "piggy.bank.exchanger@gmail.com"
 S3_BUCKET = "your-moneyexchange-backups"
