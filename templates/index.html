@@ -136,7 +136,12 @@
         </div>
         <div style="text-align:center;">
             <div style="font-size:13px;font-weight:bold;color:#555;margin-bottom:5px;">Risk Level</div>
-            {% if client.risk_level == 'low risk' %}
+            {% if client.risk_level == 'no risk' %}
+                <div style="width:50px;height:50px;background:#27ae60;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">NO</div>
+            {% elif client.risk_level == 'low risk' %}
                 <div style="width:50px;height:50px;background:#4caf50;border-radius:50%;
                             display:flex;align-items:center;justify-content:center;color:white;
                             font-weight:bold;font-size:10px;margin:0 auto 5px auto;
@@ -151,11 +156,16 @@
                             display:flex;align-items:center;justify-content:center;color:white;
                             font-weight:bold;font-size:10px;margin:0 auto 5px auto;
                             box-shadow:0 2px 6px rgba(0,0,0,0.2);">HIGH</div>
-            {% else %}
+            {% elif client.risk_level == 'on hold' %}
                 <div style="width:50px;height:50px;background:#9e9e9e;border-radius:50%;
                             display:flex;align-items:center;justify-content:center;color:white;
                             font-weight:bold;font-size:10px;margin:0 auto 5px auto;
                             box-shadow:0 2px 6px rgba(0,0,0,0.2);">HOLD</div>
+            {% else %}
+                <div style="width:50px;height:50px;background:#95a5a6;border-radius:50%;
+                            display:flex;align-items:center;justify-content:center;color:white;
+                            font-weight:bold;font-size:10px;margin:0 auto 5px auto;
+                            box-shadow:0 2px 6px rgba(0,0,0,0.2);">UNK</div>
             {% endif %}
             {% if total_volume_usd %}
                 <div style="font-size:12px;color:#555;font-weight:bold;">Vol: ${{ total_volume_usd }}</div>
@@ -225,6 +235,46 @@
 <h2 style="margin:20px 0 15px 0;font-size:22px;color:#1976d2;font-weight:bold;">New Exchange</h2>
 <form method="POST" enctype="multipart/form-data"
       style="background:white;padding:20px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+
+    <!-- PAYMENT METHODS -->
+    <div style="background:#e8f5e9; padding:15px; border-radius:8px; margin-bottom:15px;">
+        <h3 style="margin-top:0; color:#27ae60;">Payment Methods</h3>
+        <table style="width:100%; font-size:13px;">
+            <tr>
+                <td style="padding:4px 0; width:150px;"><strong style="color:black;">Payment Method (From Currency):</strong></td>
+                <td style="padding:4px 0;">
+                    <select name="payment_method_from" required style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:200px;color:black;">
+                        <option value="Cash" selected>Cash</option>
+                        <option value="Debit">Debit</option>
+                        <option value="E-Transfer">E-Transfer</option>
+                        <option value="Deposit in account">Deposit in account</option>
+                        <option value="Others">Others</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0;"><strong style="color:black;">Payment Method (To Currency):</strong></td>
+                <td style="padding:4px 0;">
+                    <select name="payment_method_to" required style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;width:200px;color:black;">
+                        <option value="Cash" selected>Cash</option>
+                        <option value="Debit">Debit</option>
+                        <option value="E-Transfer">E-Transfer</option>
+                        <option value="Deposit in account">Deposit in account</option>
+                        <option value="Others">Others</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0;"><strong style="color:black;">Payment Note:</strong></td>
+                <td style="padding:4px 0;">
+                    <textarea name="payment_note" rows="2" placeholder="Payment method notes..."
+                              style="padding:6px 8px;font-size:13px;border-radius:4px;border:1px solid #ddd;
+                                     width:100%;max-width:350px;resize:vertical;color:black;"></textarea>
+                </td>
+            </tr>
+        </table>
+    </div>
+
     <div style="background:#f8f9fa;padding:12px;border-radius:6px;margin-bottom:12px;text-align:center;">
         <label style="font-size:14px;font-weight:bold;margin-right:15px;">
             <input type="radio" name="mode" value="client_fixed" checked onchange="updateAll()"> Client Sells Fixed

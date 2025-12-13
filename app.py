@@ -213,6 +213,9 @@ class Transaction(db.Model):
     rate_from_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. USD → CAD
     rate_to_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. EUR → CAD
     notes = db.Column(db.Text, nullable=True)
+    payment_method_from = db.Column(db.String(50), nullable=True, default='Cash')
+    payment_method_to = db.Column(db.String(50), nullable=True, default='Cash')
+    payment_note = db.Column(db.Text, nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
     receipt_filename = db.Column(db.String(100))
@@ -222,6 +225,43 @@ class Transaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
+
+# === ADD NEW COLUMNS TO TRANSACTION TABLE ===
+def add_transaction_columns(engine):
+    """Add payment method columns to transaction table if they don't exist"""
+    try:
+        inspector = sa.inspect(engine)
+        # Find the transaction table (might be quoted or have different casing)
+        table_names = inspector.get_table_names()
+        transaction_table = None
+        for t in table_names:
+            if t.lower() == 'transaction':
+                transaction_table = t
+                break
+        
+        if not transaction_table:
+            return
+        
+        transaction_columns = [c['name'] for c in inspector.get_columns(transaction_table)]
+        
+        with engine.begin() as conn:
+            # SQLite doesn't support NOT NULL with DEFAULT in ALTER TABLE for existing tables
+            # So we add as nullable with DEFAULT, then update existing rows
+            # Use double quotes for SQLite table names (transaction is a reserved keyword)
+            if 'payment_method_from' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_method_from VARCHAR(50) DEFAULT \'Cash\''))
+                # Update existing rows to have default value
+                conn.execute(text(f'UPDATE "{transaction_table}" SET payment_method_from = \'Cash\' WHERE payment_method_from IS NULL'))
+                print("Added payment_method_from column to transaction table")
+            if 'payment_method_to' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_method_to VARCHAR(50) DEFAULT \'Cash\''))
+                conn.execute(text(f'UPDATE "{transaction_table}" SET payment_method_to = \'Cash\' WHERE payment_method_to IS NULL'))
+                print("Added payment_method_to column to transaction table")
+            if 'payment_note' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_note TEXT'))
+                print("Added payment_note column to transaction table")
+    except Exception as e:
+        print(f"Error adding transaction columns (may already exist): {e}")
 
 # === ADD NEW COLUMNS TO CLIENT TABLE ===
 def add_client_columns(engine):
@@ -358,6 +398,7 @@ def set_tenant_db():
         db.session.bind = db.create_engine(new_uri, pool_pre_ping=True)
         db.create_all()
         # Add new columns if needed
+        add_transaction_columns(db.engine)
         add_client_columns(db.engine)
         # Run migration if needed
         migrate_client_table(db.engine)
@@ -411,6 +452,7 @@ else:
     print("Default DB exists.")
     # Run migrations on existing database
     with app.app_context():
+        add_transaction_columns(db.engine)
         add_client_columns(db.engine)
         migrate_client_table(db.engine)
 
@@ -1161,6 +1203,11 @@ def dashboard():
         profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
         total_fee = round(profit_cad, 2)
 
+        # === GET PAYMENT METHODS ===
+        payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
+        payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
+        payment_note = request.form.get('payment_note', '').strip() or None
+
         # === SAVE TO DB ===
         tx_ref = generate_tx_ref()
         new_tx = Transaction(
@@ -1173,6 +1220,9 @@ def dashboard():
             rate_from_cad=round(rate_from_cad, 6),   # ← SAVED
             rate_to_cad=round(rate_to_cad, 6),       # ← SAVED
             notes=f"{notes} (Profit: ${total_fee} CAD)" if notes else f"Profit: ${total_fee} CAD",
+            payment_method_from=payment_method_from,
+            payment_method_to=payment_method_to,
+            payment_note=payment_note,
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
             status=status,
@@ -1507,6 +1557,9 @@ def edit_transaction(tx_id):
             tx.rate_to_cad = round(rate_to_cad, 6)       # ← SAVE
             tx.status = status
             tx.notes = notes
+            tx.payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
+            tx.payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
+            tx.payment_note = request.form.get('payment_note', '').strip() or None
             tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
             tx.total_fee_cad = round(profit_cad, 2)
 

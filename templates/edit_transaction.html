@@ -90,10 +90,42 @@
             <td style="padding:8px; font-weight:bold;">Status:</td>
             <td style="padding:8px;">
                 <select name="status" style="padding:6px; font-size:14px; width:180px;">
-                    <option value="completed" {% if tx.status == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="closed" {% if tx.status == 'closed' %}selected{% endif %}>Closed</option>
                     <option value="pending" {% if tx.status == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="cancelled" {% if tx.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
                 </select>
+            </td>
+        </tr>
+
+        <!-- PAYMENT METHODS -->
+        <tr><td colspan="2"><hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;"></td></tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Payment Method ({{ tx.from_currency }}):</td>
+            <td style="padding:8px;">
+                <select name="payment_method_from" style="padding:6px; font-size:14px; width:200px;">
+                    <option value="Cash" {% if tx.payment_method_from == 'Cash' %}selected{% endif %}>Cash</option>
+                    <option value="Debit" {% if tx.payment_method_from == 'Debit' %}selected{% endif %}>Debit</option>
+                    <option value="E-Transfer" {% if tx.payment_method_from == 'E-Transfer' %}selected{% endif %}>E-Transfer</option>
+                    <option value="Deposit in account" {% if tx.payment_method_from == 'Deposit in account' %}selected{% endif %}>Deposit in account</option>
+                    <option value="Others" {% if tx.payment_method_from == 'Others' %}selected{% endif %}>Others</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Payment Method ({{ tx.to_currency }}):</td>
+            <td style="padding:8px;">
+                <select name="payment_method_to" style="padding:6px; font-size:14px; width:200px;">
+                    <option value="Cash" {% if tx.payment_method_to == 'Cash' %}selected{% endif %}>Cash</option>
+                    <option value="Debit" {% if tx.payment_method_to == 'Debit' %}selected{% endif %}>Debit</option>
+                    <option value="E-Transfer" {% if tx.payment_method_to == 'E-Transfer' %}selected{% endif %}>E-Transfer</option>
+                    <option value="Deposit in account" {% if tx.payment_method_to == 'Deposit in account' %}selected{% endif %}>Deposit in account</option>
+                    <option value="Others" {% if tx.payment_method_to == 'Others' %}selected{% endif %}>Others</option>
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Payment Note:</td>
+            <td style="padding:8px;">
+                <textarea name="payment_note" rows="2" style="width:100%; padding:6px; font-size:14px;">{{ tx.payment_note or '' }}</textarea>
             </td>
         </tr>
 
