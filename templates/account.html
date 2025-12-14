@@ -26,6 +26,7 @@
             <tr style="background:#f8f9fa;">
                 <th style="padding:15px; text-align:left; border-bottom:2px solid #dee2e6; font-weight:bold;">Currency Name</th>
                 <th style="padding:15px; text-align:center; border-bottom:2px solid #dee2e6; font-weight:bold;">Code</th>
+                <th style="padding:15px; text-align:center; border-bottom:2px solid #dee2e6; font-weight:bold;">Rate to CAD</th>
                 <th style="padding:15px; text-align:right; border-bottom:2px solid #dee2e6; font-weight:bold;">Balance</th>
             </tr>
         </thead>
@@ -38,6 +39,13 @@
                     {{ balance.name }}
                 </td>
                 <td style="padding:15px; text-align:center; font-weight:bold; color:#1976d2;">{{ balance.code }}</td>
+                <td style="padding:15px; text-align:center; font-weight:500; color:#666;">
+                    {% if balance.rate != 'N/A' %}
+                        {{ balance.rate }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
                 <td style="padding:15px; text-align:right; font-weight:bold; color:{% if balance.balance == 'NA' %}#6c757d{% else %}#28a745{% endif %};">
                     {{ balance.balance }}
                 </td>
@@ -47,8 +55,13 @@
     </table>
 
     <div style="margin-top:20px; padding:15px; background:#f8f9fa; border-radius:5px;">
-        <strong>Note:</strong> Balances show your net position in each currency. "NA" indicates zero balance.
+        <strong>Note:</strong> Balances show your net position in each currency. Rates show "1 [currency] = X CAD" from live market data. "NA" indicates zero balance or unavailable rate.
         <br><small id="searchResults" style="color:#666;"></small>
+        {% if last_update %}
+        <br><small style="color:#28a745;">Last updated: {{ last_update.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small>
+        {% else %}
+        <br><small style="color:#888;">Rates update automatically every 10 minutes.</small>
+        {% endif %}
     </div>
 </div>
 
@@ -62,10 +75,11 @@ function filterCurrencies() {
 
     for (let i = 0; i < rows.length; i++) {
         const cells = rows[i].getElementsByTagName('td');
-        if (cells.length >= 3) {
+        if (cells.length >= 4) {
             const currencyName = cells[0].textContent || '';
             const currencyCode = cells[1].textContent || '';
-            const fullText = currencyName + ' ' + currencyCode;
+            const currencyRate = cells[2].textContent || '';
+            const fullText = currencyName + ' ' + currencyCode + ' ' + currencyRate;
 
             if (fullText.toUpperCase().indexOf(filter) > -1) {
                 rows[i].style.display = '';

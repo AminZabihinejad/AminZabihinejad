@@ -18,6 +18,9 @@ from math import ceil
 import sqlalchemy as sa
 import pdfkit
 import imgkit
+import threading
+import time
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask_mail import Mail, Message
 import secrets
 from googleapiclient.discovery import build
@@ -201,6 +204,16 @@ class Client(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
 
+class ExchangeRate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    from_currency = db.Column(db.String(3), nullable=False)
+    to_currency = db.Column(db.String(3), nullable=False)
+    rate = db.Column(db.Float, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
+
+    __table_args__ = (sa.UniqueConstraint('from_currency', 'to_currency', 'tenant_id', name='unique_currency_pair'),)
+
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     tx_ref = db.Column(db.String(11), unique=True, nullable=False, index=True)
@@ -276,6 +289,15 @@ def add_transaction_columns(engine):
                 print("Added deposit_type column to transaction table")
     except Exception as e:
         print(f"Error adding transaction columns (may already exist): {e}")
+
+    # Create exchange_rates table if it doesn't exist
+    try:
+        inspector = sa.inspect(engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            ExchangeRate.__table__.create(engine)
+            print("Created exchange_rate table")
+    except Exception as e:
+        print(f"Error creating exchange_rate table: {e}")
 
 # === ADD NEW COLUMNS TO CLIENT TABLE ===
 def add_client_columns(engine):
@@ -886,6 +908,203 @@ def generate_tx_ref():
             seq = 1
     return f"{today}{seq:03d}"
 
+def fetch_exchange_rates():
+    """Fetch live exchange rates from XE.com API or fallback to exchangerate-api.com"""
+    try:
+        # First try XE's API (requires authentication, may not work)
+        xe_api_url = "https://xecdapi.xe.com/v1/convert_from"
+        headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; CurrencyExchange/1.0)'
+        }
+
+        # Try XE API first (if available)
+        try:
+            xe_response = requests.get(f"{xe_api_url}?from=USD", headers=headers, timeout=10)
+            if xe_response.status_code == 200:
+                xe_data = xe_response.json()
+                if 'to' in xe_data and 'USD' in xe_data['to']:
+                    print("SUCCESS: Using XE.com API rates")
+                    rates = xe_data['to']
+                    # Convert to CAD base rates for storage
+                    cad_rate = rates.get('CAD', 1.0)
+                    rates = {curr: rate / cad_rate for curr, rate in rates.items()}
+                else:
+                    raise ValueError("XE API response format unexpected")
+            else:
+                raise ValueError(f"XE API returned status {xe_response.status_code}")
+        except Exception as xe_error:
+            print(f"XE API failed ({xe_error}), falling back to exchangerate-api.com")
+            # Fallback to exchangerate-api.com with USD base (gives more intuitive rates)
+            fallback_response = requests.get('https://api.exchangerate-api.com/v4/latest/USD', timeout=10)
+            fallback_data = fallback_response.json()
+            if 'rates' in fallback_data:
+                rates = fallback_data['rates']
+                print("SUCCESS: Using live rates from exchangerate-api.com (XE API requires authentication)")
+            else:
+                raise ValueError("Both APIs failed")
+
+        # Use tenant_id 1 as default
+        try:
+            tenant_id = session.get('tenant_id', 1)
+        except RuntimeError:
+            # No session context available
+            tenant_id = 1
+
+        # Update rates for all currencies we support
+        currency_codes = ['USD', 'EUR', 'GBP', 'CHF', 'AUD', 'MXN', 'JPY', 'CNY', 'AED', 'IRR',
+                        'BRL', 'INR', 'SAR', 'EGP', 'THB', 'KRW', 'ZAR', 'TRY', 'PLN', 'SEK',
+                        'NOK', 'DKK', 'CZK', 'HUF', 'ILS', 'RUB', 'PHP', 'IDR', 'MYR', 'SGD',
+                        'HKD', 'TWD', 'NZD', 'ARS', 'CLP', 'COP', 'PEN', 'RON', 'JOD', 'KWD',
+                        'BHD', 'OMR', 'QAR', 'MAD', 'KES', 'TND', 'DOP', 'UYU', 'GTQ', 'CRC',
+                        'HNL', 'BSD', 'BBD', 'KYD', 'XCD', 'TZS', 'ISK', 'JMD', 'BGL', 'LBP',
+                        'IQD', 'GNF', 'XAF', 'XOF', 'UAH', 'VND']
+
+        with app.app_context():
+            updated_count = 0
+            # Get CAD rate from USD base API (1 USD = X CAD)
+            usd_to_cad_rate = rates.get('CAD', 1.0)
+
+            for currency in currency_codes:
+                if currency in rates:
+                    # Convert to CAD base: if "1 USD = rates[currency] currency", then "1 CAD = rates[currency] / usd_to_cad_rate currency"
+                    cad_base_rate = rates[currency] / usd_to_cad_rate if usd_to_cad_rate > 0 else rates[currency]
+
+                    # Store rate (1 CAD = X currency)
+                    rate_record = ExchangeRate.query.filter_by(
+                        from_currency='CAD',
+                        to_currency=currency,
+                        tenant_id=tenant_id
+                    ).first()
+
+                    if rate_record:
+                        rate_record.rate = cad_base_rate
+                        rate_record.last_updated = datetime.utcnow()
+                    else:
+                        rate_record = ExchangeRate(
+                            from_currency='CAD',
+                            to_currency=currency,
+                            rate=cad_base_rate,
+                            tenant_id=tenant_id
+                        )
+                        db.session.add(rate_record)
+                    updated_count += 1
+
+            db.session.commit()
+            print(f"SUCCESS: Updated {updated_count} live exchange rates (XE.com preferred, fallback to exchangerate-api.com)")
+            return True
+
+    except Exception as e:
+        print(f"ERROR: Error fetching exchange rates: {e}")
+        return False
+
+def get_exchange_rates_to_cad():
+    """Get current exchange rates to CAD from database"""
+    try:
+        tenant_id = session.get('tenant_id', 1)
+    except RuntimeError:
+        # No session context available
+        tenant_id = 1
+
+    rates = {}
+
+    try:
+        # Check if table exists first
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            print("Exchange rate table doesn't exist, fetching rates...")
+            fetch_exchange_rates()
+
+        rate_records = ExchangeRate.query.filter_by(
+            from_currency='CAD',
+            tenant_id=tenant_id
+        ).all()
+
+        for record in rate_records:
+            rates[record.to_currency] = record.rate
+
+        # If no rates in database, fetch them
+        if not rates:
+            print("No rates in database, fetching from API...")
+            fetch_exchange_rates()
+            # Try again after fetching
+            rate_records = ExchangeRate.query.filter_by(
+                from_currency='CAD',
+                tenant_id=tenant_id
+            ).all()
+            for record in rate_records:
+                rates[record.to_currency] = record.rate
+
+    except Exception as e:
+        print(f"Error getting exchange rates: {e}")
+        # Return empty dict if there's an error
+        return {}
+
+    return rates
+
+def get_exchange_rates_from_usd():
+    """Get exchange rates from database in USD base format (1 USD = X currency) - for display"""
+    try:
+        tenant_id = session.get('tenant_id', 1)
+    except RuntimeError:
+        # No session context available
+        tenant_id = 1
+
+    try:
+        # Check if table exists first
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            return {}
+
+        rate_records = ExchangeRate.query.filter_by(
+            from_currency='CAD',
+            tenant_id=tenant_id
+        ).all()
+
+        # Find USD rate to convert
+        usd_to_cad_rate = None
+        for record in rate_records:
+            if record.to_currency == 'USD':
+                usd_to_cad_rate = record.rate  # 1 CAD = X USD
+                break
+
+        if not usd_to_cad_rate or usd_to_cad_rate <= 0:
+            return {}
+
+        # Convert all rates to USD base
+        usd_base_rates = {}
+        for record in rate_records:
+            # If 1 CAD = record.rate currency, then 1 USD = (record.rate / usd_to_cad_rate) currency
+            usd_base_rates[record.to_currency] = record.rate / usd_to_cad_rate
+
+        # Add CAD rate (inverse of USD rate)
+        usd_base_rates['CAD'] = 1.0 / usd_to_cad_rate
+
+        return usd_base_rates
+
+    except Exception as e:
+        print(f"Error getting USD base exchange rates: {e}")
+        return {}
+
+def fetch_exchange_rates_job():
+    """Wrapper function for scheduler to run with app context"""
+    with app.app_context():
+        fetch_exchange_rates()
+
+def start_rate_scheduler():
+    """Start background scheduler to update rates every 10 minutes"""
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=fetch_exchange_rates_job, trigger="interval", minutes=10, id='fetch_rates')
+    scheduler.start()
+
+    # Initial fetch
+    with app.app_context():
+        fetch_exchange_rates()
+
+    print("SUCCESS: Exchange rate scheduler started - updates every 10 minutes")
+
 def get_balances():
     if 'user_id' not in session: return {}
     client_id = session.get('selected_client_id')
@@ -1250,7 +1469,7 @@ def dashboard():
 
             if source_empty or reason_empty:
                 print("DEBUG: BLOCKING - fields are empty")
-                flash(f'❌ REQUIRED: For transactions over $3000 CAD (this transaction: ${transaction_cad_value:.2f}), Source of Funds and Reason of Transaction are required.', 'danger')
+                flash(f'REQUIRED: For transactions over $3000 CAD (this transaction: ${transaction_cad_value:.2f}), Source of Funds and Reason of Transaction are required.', 'danger')
                 return redirect(url_for('dashboard'))
             else:
                 print("DEBUG: ALLOWING - fields are filled")
@@ -1999,6 +2218,9 @@ def account():
         'DKK': {'name': 'Danish Krone', 'country': 'dk'}
     }
 
+    # Get live exchange rates from database/API (CAD base for display)
+    rates_to_cad = get_exchange_rates_to_cad()
+
     # Prepare balance data for display (showing all currencies from Sharif Exchange)
     account_balances = []
     currency_order = [
@@ -2017,14 +2239,34 @@ def account():
         balance = balances.get(currency_code, 0)
         display_balance = 'NA' if balance == 0 else f'{balance:.2f}'
         currency_info = currency_data.get(currency_code, {'name': currency_code, 'flag': ''})
+        rate_from_cad = rates_to_cad.get(currency_code, None)
+        if rate_from_cad and isinstance(rate_from_cad, (int, float)) and rate_from_cad > 0:
+            # Convert from "1 CAD = X currency" to "1 currency = Y CAD"
+            rate_to_cad = 1.0 / rate_from_cad
+            display_rate = f"{rate_to_cad:.4f}"
+        else:
+            display_rate = 'N/A'
+
         account_balances.append({
             'name': currency_info['name'],
             'code': currency_code,
             'country': currency_info['country'],
+            'rate': display_rate,
             'balance': display_balance
         })
 
-    return render_template('account.html', account_balances=account_balances)
+    # Get last update time
+    last_update = None
+    try:
+        latest_rate = ExchangeRate.query.filter_by(
+            tenant_id=session.get('tenant_id', 1)
+        ).order_by(ExchangeRate.last_updated.desc()).first()
+        if latest_rate:
+            last_update = latest_rate.last_updated
+    except:
+        pass
+
+    return render_template('account.html', account_balances=account_balances, last_update=last_update)
 
 @app.route('/reports')
 @login_required
@@ -2294,6 +2536,13 @@ def favicon():
         'favicon.ico',
         mimetype='image/vnd.microsoft.icon'
     )
+
+# === START BACKGROUND SERVICES ===
+with app.app_context():
+    try:
+        start_rate_scheduler()
+    except Exception as e:
+        print(f"Could not start rate scheduler: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True)
