@@ -815,7 +815,7 @@ def backup_all_tenants():
 
 # === SCHEDULE ===
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=backup_all_tenants, trigger="interval", minutes=5)  # ← EVERY 5 MIN FOR TESTING
+scheduler.add_job(func=backup_all_tenants, trigger="interval", minutes=30)  # ← EVERY 30 MIN FOR PRODUCTION
 scheduler.start()
 
 # === MANUAL BACKUP ROUTE (SUPER ADMIN ONLY) ===
@@ -829,6 +829,116 @@ def backup_now():
     backup_all_tenants()
     flash('Backup completed! Check the chosen destination.', 'success')
     return redirect(url_for('profile'))
+
+@app.route('/download_backups')
+@login_required
+def download_backups():
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    # Get all tenants for client names
+    tenants = Tenant.query.all()
+    tenant_dict = {tenant.id: {'name': tenant.name, 'client_name': tenant.client_name} for tenant in tenants}
+
+    # Group backup files by tenant/client
+    client_backups = {}
+
+    # Database backups
+    if os.path.exists(BACKUP_LOCAL_DIR):
+        for file in os.listdir(BACKUP_LOCAL_DIR):
+            if file.endswith('.encrypted'):
+                filepath = os.path.join(BACKUP_LOCAL_DIR, file)
+                size = os.path.getsize(filepath)
+                mtime = os.path.getmtime(filepath)
+
+                # Extract tenant_id from filename (tenant_X.db_...)
+                tenant_id = None
+                if file.startswith('tenant_'):
+                    try:
+                        tenant_part = file.split('tenant_')[1].split('.')[0]
+                        tenant_id = int(tenant_part)
+                    except (ValueError, IndexError):
+                        pass
+
+                client_info = tenant_dict.get(tenant_id, {'name': f'Tenant {tenant_id}', 'client_name': f'Unknown Client'})
+
+                if tenant_id not in client_backups:
+                    client_backups[tenant_id] = {
+                        'tenant_id': tenant_id,
+                        'client_name': client_info['client_name'],
+                        'tenant_name': client_info['name'],
+                        'database_backups': [],
+                        'uploads_backups': []
+                    }
+
+                client_backups[tenant_id]['database_backups'].append({
+                    'filename': file,
+                    'size': size,
+                    'date': datetime.fromtimestamp(mtime),
+                    'type': 'database'
+                })
+
+    # Uploads backups
+    if os.path.exists(BACKUP_UPLOADS_DIR):
+        for file in os.listdir(BACKUP_UPLOADS_DIR):
+            if file.endswith('.enc'):
+                filepath = os.path.join(BACKUP_UPLOADS_DIR, file)
+                size = os.path.getsize(filepath)
+                mtime = os.path.getmtime(filepath)
+
+                # For uploads, we need to associate with tenant somehow
+                # Since uploads are shared, we'll put them under a general category
+                # or try to extract tenant info if available in filename
+                tenant_id = 0  # Use 0 for general/shared uploads
+
+                if tenant_id not in client_backups:
+                    client_backups[tenant_id] = {
+                        'tenant_id': tenant_id,
+                        'client_name': 'Shared/System',
+                        'tenant_name': 'Uploads & System',
+                        'database_backups': [],
+                        'uploads_backups': []
+                    }
+
+                client_backups[tenant_id]['uploads_backups'].append({
+                    'filename': file,
+                    'size': size,
+                    'date': datetime.fromtimestamp(mtime),
+                    'type': 'uploads'
+                })
+
+    # Sort backups within each client by date (newest first)
+    for client_data in client_backups.values():
+        client_data['database_backups'].sort(key=lambda x: x['date'], reverse=True)
+        client_data['uploads_backups'].sort(key=lambda x: x['date'], reverse=True)
+
+    # Convert to list and sort clients by name
+    client_backups_list = list(client_backups.values())
+    client_backups_list.sort(key=lambda x: (x['tenant_id'] == 0, x['client_name']))  # Shared/System first, then alphabetical
+
+    return render_template('download_backups.html',
+                         client_backups=client_backups_list)
+
+@app.route('/download_backup_file/<path:filename>')
+@login_required
+def download_backup_file(filename):
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    # Security check - only allow downloading from backup directories
+    backup_dir = None
+    if filename.endswith('.encrypted'):
+        backup_dir = BACKUP_LOCAL_DIR
+    elif filename.endswith('.enc'):
+        backup_dir = str(BACKUP_UPLOADS_DIR)
+
+    if backup_dir and os.path.exists(os.path.join(backup_dir, filename)):
+        return send_from_directory(backup_dir, filename, as_attachment=True)
+    else:
+        flash('Backup file not found!', 'danger')
+        return redirect(url_for('download_backups'))
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
