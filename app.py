@@ -483,7 +483,7 @@ if not DEFAULT_DB_FILE.exists():
             db.session.add(admin)
             db.session.commit()
 
-            print("DEFAULT SUPER ADMIN: username=admin, password=admin123")
+            print("Default super admin account created successfully")
             print("Login: http://127.0.0.1:5000/login")
         else:
             print("Default tenant exists.")
