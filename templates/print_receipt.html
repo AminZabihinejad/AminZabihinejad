@@ -38,6 +38,9 @@
         .btn-telegram { background: #0088cc; color: white; }
         .btn-telegram.sending { background: #f39c12; }
         .btn-telegram.sent { background: #27ae60; }
+        .btn-email { background: #e74c3c; color: white; }
+        .btn-email.sending { background: #f39c12; }
+        .btn-email.sent { background: #27ae60; }
         .btn:disabled { background: #ccc; color: #666; cursor: not-allowed; }
         .telegram-info {
             background: #f0f8ff; padding: 8px; border-radius: 4px; margin: 8px 0;
@@ -112,6 +115,15 @@
 </div>
 {% endif %}
 
+<!-- EMAIL INFO BOX -->
+{% if not is_download and (not client.email or client.email|trim == '') %}
+<div class="telegram-info" style="background: #fff0f0; border: 1px solid #f5c6cb;">
+    <strong>Want receipt by Email?</strong><br>
+    Please update your email address in your profile<br>
+    so we can send receipts directly to you!
+</div>
+{% endif %}
+
 <!-- ACTION BUTTONS -->
 {% if not is_download %}
 <div class="actions">
@@ -124,6 +136,13 @@
         </button>
     {% else %}
         <button class="btn" disabled>Telegram ID missing</button>
+    {% endif %}
+    {% if client.email %}
+        <button class="btn btn-email" id="email-btn-{{ tx.id }}" onclick="sendToEmail({{ tx.id }})">
+            Send to Email
+        </button>
+    {% else %}
+        <button class="btn" disabled>Email missing</button>
     {% endif %}
 </div>
 {% endif %}
@@ -156,6 +175,38 @@ function sendToTelegram(txId) {
             btn.disabled = false;
             btn.innerHTML = 'Send to Telegram';
             btn.style.background = '#0088cc';
+            btn.classList.remove('sending');
+        }, 3000);
+    });
+}
+
+function sendToEmail(txId) {
+    const btn = document.getElementById('email-btn-' + txId);
+    if (!btn || btn.disabled) return;
+    btn.innerHTML = 'Sending...';
+    btn.disabled = true;
+    btn.classList.add('sending');
+    fetch(`/send_email_receipt/${txId}`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'sent') {
+            btn.innerHTML = 'Sent!';
+            btn.classList.remove('sending');
+            btn.classList.add('sent');
+        } else {
+            throw new Error();
+        }
+    })
+    .catch(err => {
+        btn.innerHTML = 'Failed';
+        btn.style.background = '#e74c3c';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = 'Send to Email';
+            btn.style.background = '#e74c3c';
             btn.classList.remove('sending');
         }, 3000);
     });

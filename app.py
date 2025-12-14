@@ -2784,6 +2784,70 @@ def send_telegram_receipt(tx_id):
             try: os.remove(pdf_path)
             except: pass
 
+
+@app.route('/send_email_receipt/<int:tx_id>', methods=['POST'])
+@login_required
+def send_email_receipt(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+
+    if not client.email:
+        return jsonify({'error': 'No email address'}), 400
+
+    # Generate PDF
+    pdf_path = os.path.join(app.config['RECEIPT_FOLDER'], f"{tx.tx_ref}.pdf")
+    try:
+        html = render_template('print_receipt.html',
+                               tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                               profit_cad=tx.total_fee_cad or 0,
+                               flat_fee_cad=FLAT_FEE_CAD,
+                               current_fee=round(FEE_PERCENTAGE * 100, 1),
+                               fee_percentage=FEE_PERCENTAGE,
+                               is_download=True)
+
+        pdf_data = pdfkit.from_string(html, False, configuration=config_pdf)
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_data)
+
+        # Send email with PDF attachment
+        msg = Message(
+            subject=f"Receipt {tx.tx_ref} - {EXCHANGE_NAME}",
+            recipients=[client.email],
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            body=f"""
+Dear {client.first_name} {client.last_name},
+
+Please find attached your receipt for transaction #{tx.tx_ref}.
+
+Transaction Details:
+- Date: {tx.date.strftime('%Y-%m-%d %H:%M')}
+- Amount: {tx.from_amount} {tx.from_currency} → {tx.to_amount} {tx.to_currency}
+- Reference: {tx.tx_ref}
+
+Thank you for your business!
+
+{EXCHANGE_NAME}
+"""
+        )
+
+        with open(pdf_path, 'rb') as f:
+            msg.attach(
+                filename=f"Receipt_{tx.tx_ref}.pdf",
+                content_type='application/pdf',
+                data=f.read()
+            )
+
+        mail.send(msg)
+        return jsonify({'status': 'sent'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Email send error: {e}")
+        return jsonify({'error': 'Send failed'}), 500
+    finally:
+        if os.path.exists(pdf_path):
+            try: os.remove(pdf_path)
+            except: pass
+
 @app.route('/download_receipt/<int:tx_id>')
 @login_required
 def download_receipt(tx_id):

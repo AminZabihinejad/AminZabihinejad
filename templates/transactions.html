@@ -205,7 +205,9 @@
             </strong>
             <div style="margin-top:10px;">
                 {% if page > 1 %}
-                    <a href="{{ url_for('transactions', page=page-1, **request.args.to_dict(flat=False)) }}"
+                    {% set args = request.args.copy() %}
+                    {% set _ = args.pop('page', None) %}
+                    <a href="{{ url_for('transactions', page=page-1, **args) }}"
                        style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
                         Previous
                     </a>
@@ -217,7 +219,9 @@
                 {% set end_page = [page + 2, total_pages]|min %}
 
                 {% if start_page > 1 %}
-                    <a href="{{ url_for('transactions', page=1, **request.args.to_dict(flat=False)) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">1</a>
+                    {% set args = request.args.copy() %}
+                    {% set _ = args.pop('page', None) %}
+                    <a href="{{ url_for('transactions', page=1, **args) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">1</a>
                     {% if start_page > 2 %}...{% endif %}
                 {% endif %}
 
@@ -225,7 +229,9 @@
                     {% if p == page %}
                         <strong style="margin:0 3px; padding:4px 8px; background:#27ae60; color:white; border-radius:3px;">{{ p }}</strong>
                     {% else %}
-                        <a href="{{ url_for('transactions', page=p, **request.args.to_dict(flat=False)) }}"
+                        {% set args = request.args.copy() %}
+                        {% set _ = args.pop('page', None) %}
+                        <a href="{{ url_for('transactions', page=p, **args) }}"
                            style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">
                             {{ p }}
                         </a>
@@ -234,11 +240,15 @@
 
                 {% if end_page < total_pages %}
                     {% if end_page < total_pages - 1 %}...{% endif %}
-                    <a href="{{ url_for('transactions', page=total_pages, **request.args.to_dict(flat=False)) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">{{ total_pages }}</a>
+                    {% set args = request.args.copy() %}
+                    {% set _ = args.pop('page', None) %}
+                    <a href="{{ url_for('transactions', page=total_pages, **args) }}" style="margin:0 3px; padding:4px 8px; background:#eee; color:#333; text-decoration:none; border-radius:3px;">{{ total_pages }}</a>
                 {% endif %}
 
                 {% if page < total_pages %}
-                    <a href="{{ url_for('transactions', page=page+1, **request.args.to_dict(flat=False)) }}"
+                    {% set args = request.args.copy() %}
+                    {% set _ = args.pop('page', None) %}
+                    <a href="{{ url_for('transactions', page=page+1, **args) }}"
                        style="margin:0 5px; padding:6px 12px; background:#3498db; color:white; text-decoration:none; border-radius:4px;">
                         Next
                     </a>
