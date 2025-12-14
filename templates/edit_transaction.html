@@ -129,6 +129,26 @@
             </td>
         </tr>
 
+        <!-- SOURCE OF FUNDS -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Source of Funds:</td>
+            <td style="padding:8px;">
+                <input type="text" name="source_of_funds" value="{{ tx.source_of_funds or '' }}"
+                       placeholder="e.g., Salary, Business, Investment..."
+                       style="width:100%; padding:6px; font-size:14px; border:1px solid #ddd; border-radius:4px;">
+            </td>
+        </tr>
+
+        <!-- REASON OF TRANSACTION -->
+        <tr>
+            <td style="padding:8px; font-weight:bold;">Reason of Transaction:</td>
+            <td style="padding:8px;">
+                <input type="text" name="transaction_reason" value="{{ tx.transaction_reason or '' }}"
+                       placeholder="e.g., Personal use, Business expense..."
+                       style="width:100%; padding:6px; font-size:14px; border:1px solid #ddd; border-radius:4px;">
+            </td>
+        </tr>
+
         <!-- RECEIPT UPLOAD -->
         <tr>
             <td style="padding:8px; font-weight:bold; vertical-align:top;">Upload Receipt (PDF):</td>

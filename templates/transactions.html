@@ -85,6 +85,8 @@
                         <th style="padding:8px; text-align:center;">Status</th>
                         <th style="padding:8px; text-align:center;">Receipt</th>
                         <th style="padding:8px;">Notes</th>
+                        <th style="padding:8px;">Source of Funds</th>
+                        <th style="padding:8px;">Reason of Transaction</th>
                         <th style="padding:8px; text-align:center;">Action</th>
                     </tr>
                 </thead>
@@ -161,6 +163,16 @@
                             <!-- NOTES (TRUNCATED) -->
                             <td style="padding:8px; max-width:120px; word-wrap:break-word; font-size:11px;">
                                 {{ (tx.notes or '')[:30] }}{% if (tx.notes or '')|length > 30 %}...{% endif %}
+                            </td>
+
+                            <!-- SOURCE OF FUNDS -->
+                            <td style="padding:8px; max-width:100px; word-wrap:break-word; font-size:11px;">
+                                {{ (tx.source_of_funds or '')[:20] }}{% if (tx.source_of_funds or '')|length > 20 %}...{% endif %}
+                            </td>
+
+                            <!-- REASON OF TRANSACTION -->
+                            <td style="padding:8px; max-width:100px; word-wrap:break-word; font-size:11px;">
+                                {{ (tx.transaction_reason or '')[:20] }}{% if (tx.transaction_reason or '')|length > 20 %}...{% endif %}
                             </td>
 
                             <!-- ACTION BUTTONS -->
