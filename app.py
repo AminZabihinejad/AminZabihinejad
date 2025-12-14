@@ -444,6 +444,9 @@ def set_tenant_db():
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+
+# Note: Pending restoration check is handled in the main execution block
+
 # === CREATE DEFAULT DB + SUPER ADMIN ===
 DEFAULT_DB_FILE = INSTANCE_DIR / "tenant_1.db"
 if not DEFAULT_DB_FILE.exists():
@@ -917,8 +920,12 @@ def download_backups():
     client_backups_list = list(client_backups.values())
     client_backups_list.sort(key=lambda x: (x['tenant_id'] == 0, x['client_name']))  # Shared/System first, then alphabetical
 
+    # Check if there's a pending restoration
+    restoration_pending = os.path.exists(RESTORE_PENDING_FILE)
+
     return render_template('download_backups.html',
-                         client_backups=client_backups_list)
+                         client_backups=client_backups_list,
+                         restoration_pending=restoration_pending)
 
 @app.route('/download_backup_file/<path:filename>')
 @login_required
@@ -938,6 +945,150 @@ def download_backup_file(filename):
         return send_from_directory(backup_dir, filename, as_attachment=True)
     else:
         flash('Backup file not found!', 'danger')
+        return redirect(url_for('download_backups'))
+
+
+RESTORE_PENDING_FILE = 'instance/restore_pending.json'
+
+def check_pending_restoration():
+    """Check for and complete any pending database restorations on startup"""
+    if not os.path.exists(RESTORE_PENDING_FILE):
+        return False
+
+    try:
+        import json
+        with open(RESTORE_PENDING_FILE, 'r') as f:
+            pending_data = json.load(f)
+
+        tenant_id = pending_data['tenant_id']
+        restored_db_path = pending_data['restored_db_path']
+
+        db_path = f'instance/tenant_{tenant_id}.db'
+
+        # Since the database might be locked by running processes, we'll use a different approach:
+        # Replace the database file by copying the content instead of renaming
+
+        if os.path.exists(restored_db_path):
+            # Step 1: Backup current database by copying it
+            if os.path.exists(db_path):
+                backup_current = f'{db_path}.backup_before_restore_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                import shutil
+                shutil.copy2(db_path, backup_current)
+
+            # Step 2: Replace database content by copying
+            shutil.copy2(restored_db_path, db_path)
+
+            # Clean up the temporary restored file
+            os.remove(restored_db_path)
+
+        else:
+            return False
+
+        # Step 3: Clean up pending file
+        os.remove(RESTORE_PENDING_FILE)
+        print("Database restoration completed successfully!")
+
+        return True
+
+    except Exception as e:
+        print(f"Error completing pending restoration: {e}")
+        return False
+
+
+# === CHECK FOR PENDING DATABASE RESTORATION ===
+# This must happen BEFORE any database connections are established
+check_pending_restoration()
+
+
+@app.route('/restore_database/<path:filename>', methods=['POST'])
+@login_required
+def restore_database(filename):
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    try:
+        # Security check - only allow restoring from local backup directory
+        backup_file_path = os.path.join(BACKUP_LOCAL_DIR, filename)
+        if not os.path.exists(backup_file_path):
+            flash('Backup file not found!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Validate filename format (should be tenant_X.db_YYYYMMDD_HHMMSS.encrypted)
+        if not filename.startswith('tenant_') or not filename.endswith('.encrypted'):
+            flash('Invalid backup file format!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Extract tenant ID from filename
+        try:
+            tenant_id = int(filename.split('tenant_')[1].split('.db_')[0])
+        except (IndexError, ValueError):
+            flash('Could not determine tenant from backup filename!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Get tenant info
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            flash('Tenant not found for this backup!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Database file path
+        db_path = f'instance/tenant_{tenant_id}.db'
+
+        print(f"🔄 STARTING DATABASE RESTORATION: {filename}")
+        print(f"📁 Tenant: {tenant.name} (ID: {tenant_id})")
+        print(f"🎯 Target DB: {db_path}")
+
+        # Step 1: Decrypt the backup file
+        print("🔓 Decrypting backup file...")
+        fernet = Fernet(KEY)
+
+        with open(backup_file_path, 'rb') as enc_file:
+            encrypted_data = enc_file.read()
+
+        decrypted_data = fernet.decrypt(encrypted_data)
+        restored_db_path = f'{db_path}.restored'
+
+        with open(restored_db_path, 'wb') as dec_file:
+            dec_file.write(decrypted_data)
+
+        print(f"✅ Decrypted backup to: {restored_db_path}")
+
+        # Step 2: Verify the decrypted database before proceeding
+        try:
+            import sqlite3
+            conn = sqlite3.connect(restored_db_path)
+            conn.execute("SELECT COUNT(*) FROM client").fetchone()
+            conn.close()
+            print("✅ Restored database integrity check passed")
+        except Exception as e:
+            os.remove(restored_db_path)  # Clean up corrupted file
+            print(f"❌ Restored database integrity check failed: {e}")
+            flash('❌ Database restoration failed - backup file appears to be corrupted.', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Step 3: Create pending restoration marker
+        import json
+        pending_data = {
+            'tenant_id': tenant_id,
+            'restored_db_path': restored_db_path,
+            'timestamp': datetime.now().isoformat(),
+            'backup_filename': filename
+        }
+
+        # Create instance directory if it doesn't exist
+        os.makedirs('instance', exist_ok=True)
+
+        with open(RESTORE_PENDING_FILE, 'w') as f:
+            json.dump(pending_data, f, indent=2)
+
+        flash('✅ Database restoration prepared! Please restart the application to complete the restoration.', 'success')
+
+        return redirect(url_for('download_backups'))
+
+    except Exception as e:
+        print(f"❌ DATABASE RESTORATION PREPARATION FAILED: {e}")
+        flash(f'❌ Database restoration preparation failed: {str(e)}', 'danger')
         return redirect(url_for('download_backups'))
 
 def allowed_file(filename):
