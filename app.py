@@ -1298,7 +1298,6 @@ def dashboard():
         led_color = interpolate_color(total_volume_usd)
         total_volume_usd = round(total_volume_usd, 2)
 
-    balances = get_balances()
     open_transactions = Transaction.query.filter_by(
         status='pending',
         tenant_id=session.get('tenant_id')
@@ -1307,7 +1306,6 @@ def dashboard():
     return render_template(
         'index.html',
         client=client,
-        balances=balances,
         open_transactions=open_transactions,
         total_volume_usd=total_volume_usd,
         led_color=led_color,
@@ -1925,13 +1923,13 @@ def deposit():
 def account():
     balances = get_balances()
 
-    # Currency names mapping
-    currency_names = {
-        'USD': 'US Dollar',
-        'EUR': 'Euro',
-        'GBP': 'British Pound',
-        'IRR': 'Iranian Rial',
-        'CAD': 'Canadian Dollar'
+    # Currency names and country codes for flag images
+    currency_data = {
+        'CAD': {'name': 'Canadian Dollar', 'country': 'ca'},
+        'USD': {'name': 'US Dollar', 'country': 'us'},
+        'EUR': {'name': 'Euro', 'country': 'eu'},
+        'GBP': {'name': 'British Pound', 'country': 'gb'},
+        'IRR': {'name': 'Iranian Rial', 'country': 'ir'}
     }
 
     # Prepare balance data for display
@@ -1939,9 +1937,11 @@ def account():
     for currency_code in ['CAD', 'USD', 'EUR', 'GBP', 'IRR']:
         balance = balances.get(currency_code, 0)
         display_balance = 'NA' if balance == 0 else f'{balance:.2f}'
+        currency_info = currency_data.get(currency_code, {'name': currency_code, 'flag': ''})
         account_balances.append({
-            'name': currency_names.get(currency_code, currency_code),
+            'name': currency_info['name'],
             'code': currency_code,
+            'country': currency_info['country'],
             'balance': display_balance
         })
 

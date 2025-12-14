@@ -17,7 +17,11 @@
         <tbody>
             {% for balance in account_balances %}
             <tr style="border-bottom:1px solid #dee2e6;">
-                <td style="padding:15px; font-weight:500;">{{ balance.name }}</td>
+                <td style="padding:15px; font-weight:500;">
+                    <img src="https://flagcdn.com/24x18/{{ balance.country }}.png" alt="{{ balance.name }} flag"
+                         style="width:24px; height:18px; margin-right:8px; vertical-align:middle; border-radius:2px;">
+                    {{ balance.name }}
+                </td>
                 <td style="padding:15px; text-align:center; font-weight:bold; color:#1976d2;">{{ balance.code }}</td>
                 <td style="padding:15px; text-align:right; font-weight:bold; color:{% if balance.balance == 'NA' %}#6c757d{% else %}#28a745{% endif %};">
                     {{ balance.balance }}
