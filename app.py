@@ -1923,18 +1923,97 @@ def deposit():
 def account():
     balances = get_balances()
 
-    # Currency names and country codes for flag images
+    # Currency names and country codes for flag images (from Sharif Exchange)
     currency_data = {
+        # Main currencies from Sharif Exchange
         'CAD': {'name': 'Canadian Dollar', 'country': 'ca'},
         'USD': {'name': 'US Dollar', 'country': 'us'},
         'EUR': {'name': 'Euro', 'country': 'eu'},
         'GBP': {'name': 'British Pound', 'country': 'gb'},
-        'IRR': {'name': 'Iranian Rial', 'country': 'ir'}
+        'CHF': {'name': 'Swiss Franc', 'country': 'ch'},
+        'AUD': {'name': 'Australian Dollar', 'country': 'au'},
+        'MXN': {'name': 'Mexican Peso', 'country': 'mx'},
+        'JPY': {'name': 'Japanese Yen', 'country': 'jp'},
+        'CNY': {'name': 'Chinese Yuan', 'country': 'cn'},
+        'AED': {'name': 'UAE Dirham', 'country': 'ae'},
+
+        # Other currencies from Sharif Exchange
+        'ARS': {'name': 'Argentine Peso', 'country': 'ar'},
+        'BSD': {'name': 'Bahamas Dollar', 'country': 'bs'},
+        'BHD': {'name': 'Bahrain Dinar', 'country': 'bh'},
+        'BBD': {'name': 'Barbados Dollar', 'country': 'bb'},
+        'BMD': {'name': 'Bermuda Dollar', 'country': 'bm'},
+        'BRL': {'name': 'Brazilian Real', 'country': 'br'},
+        'BGL': {'name': 'Bulgarian Leva', 'country': 'bg'},
+        'KYD': {'name': 'Cayman Island Dollar', 'country': 'ky'},
+        'XAF': {'name': 'Central African Franc', 'country': 'cf'},
+        'CLP': {'name': 'Chilean Peso', 'country': 'cl'},
+        'COP': {'name': 'Colombian Peso', 'country': 'co'},
+        'CRC': {'name': 'Costa Rican Colon', 'country': 'cr'},
+        'CZK': {'name': 'Czech Koruna', 'country': 'cz'},
+        'DOP': {'name': 'Dominican Peso', 'country': 'do'},
+        'XCD': {'name': 'East Caribbean Dollar', 'country': 'ag'},
+        'EGP': {'name': 'Egyptian Pound', 'country': 'eg'},
+        'GTQ': {'name': 'Guatemalan Quetzal', 'country': 'gt'},
+        'GNF': {'name': 'Guinea Franc', 'country': 'gn'},
+        'HNL': {'name': 'Honduran Lempira', 'country': 'hn'},
+        'HKD': {'name': 'Hong Kong Dollar', 'country': 'hk'},
+        'HUF': {'name': 'Hungarian Forint', 'country': 'hu'},
+        'ISK': {'name': 'Icelandic Kronur', 'country': 'is'},
+        'INR': {'name': 'Indian Rupee', 'country': 'in'},
+        'IDR': {'name': 'Indonesian Rupiah', 'country': 'id'},
+        'IQD': {'name': 'Iraqi Dinar', 'country': 'iq'},
+        'IRR': {'name': 'Iranian Rial', 'country': 'ir'},
+        'ILS': {'name': 'Israeli Shekel', 'country': 'il'},
+        'JMD': {'name': 'Jamaican Dollar', 'country': 'jm'},
+        'JOD': {'name': 'Jordanian Dinar', 'country': 'jo'},
+        'KES': {'name': 'Kenyan Shilling', 'country': 'ke'},
+        'KWD': {'name': 'Kuwaiti Dinar', 'country': 'kw'},
+        'LBP': {'name': 'Lebanese Pound', 'country': 'lb'},
+        'MYR': {'name': 'Malaysian Ringgit', 'country': 'my'},
+        'MAD': {'name': 'Moroccan Dirham', 'country': 'ma'},
+        'NZD': {'name': 'New Zealand Dollar', 'country': 'nz'},
+        'NOK': {'name': 'Norwegian Krone', 'country': 'no'},
+        'OMR': {'name': 'Omani Rial', 'country': 'om'},
+        'PEN': {'name': 'Peruvian Soles', 'country': 'pe'},
+        'PHP': {'name': 'Philippine Peso', 'country': 'ph'},
+        'PLN': {'name': 'Polish Zloty', 'country': 'pl'},
+        'QAR': {'name': 'Qatari Riyal', 'country': 'qa'},
+        'RON': {'name': 'Romanian Leu', 'country': 'ro'},
+        'RUB': {'name': 'Russian Ruble', 'country': 'ru'},
+        'SAR': {'name': 'Saudi Riyal', 'country': 'sa'},
+        'SCO': {'name': 'Scottish Pound', 'country': 'gb'},
+        'SGD': {'name': 'Singapore Dollar', 'country': 'sg'},
+        'ZAR': {'name': 'South African Rand', 'country': 'za'},
+        'KRW': {'name': 'South Korean Won', 'country': 'kr'},
+        'SEK': {'name': 'Swedish Krona', 'country': 'se'},
+        'TWD': {'name': 'New Taiwan Dollar', 'country': 'tw'},
+        'TZS': {'name': 'Tanzanian Shilling', 'country': 'tz'},
+        'THB': {'name': 'Thai Baht', 'country': 'th'},
+        'TND': {'name': 'Tunisian Dinar', 'country': 'tn'},
+        'TRY': {'name': 'Turkish Lira', 'country': 'tr'},
+        'UAH': {'name': 'Ukrainian Hryvnia', 'country': 'ua'},
+        'UYU': {'name': 'Uruguayan Peso', 'country': 'uy'},
+        'VND': {'name': 'Vietnamese Dong', 'country': 'vn'},
+        'XOF': {'name': 'West African Franc', 'country': 'bf'},
+        'DKK': {'name': 'Danish Krone', 'country': 'dk'}
     }
 
-    # Prepare balance data for display
+    # Prepare balance data for display (showing all currencies from Sharif Exchange)
     account_balances = []
-    for currency_code in ['CAD', 'USD', 'EUR', 'GBP', 'IRR']:
+    currency_order = [
+        # Main currencies
+        'CAD', 'USD', 'EUR', 'GBP', 'CHF', 'AUD', 'MXN', 'JPY', 'CNY', 'AED',
+        # Other currencies in alphabetical order
+        'ARS', 'BBD', 'BGL', 'BHD', 'BMD', 'BSD', 'BRL', 'CLP', 'COP', 'CRC',
+        'CZK', 'DKK', 'DOP', 'EGP', 'GNF', 'GTQ', 'HKD', 'HNL', 'HUF', 'IDR',
+        'ILS', 'INR', 'IQD', 'IRR', 'ISK', 'JMD', 'JOD', 'KES', 'KRW', 'KWD',
+        'KYD', 'LBP', 'MAD', 'MYR', 'NOK', 'NZD', 'OMR', 'PEN', 'PHP', 'PLN',
+        'QAR', 'RON', 'RUB', 'SAR', 'SCO', 'SEK', 'SGD', 'THB', 'TND', 'TRY',
+        'TWD', 'TZS', 'UAH', 'UYU', 'VND', 'XAF', 'XCD', 'ZAR'
+    ]
+
+    for currency_code in currency_order:
         balance = balances.get(currency_code, 0)
         display_balance = 'NA' if balance == 0 else f'{balance:.2f}'
         currency_info = currency_data.get(currency_code, {'name': currency_code, 'flag': ''})

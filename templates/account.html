@@ -6,6 +6,21 @@
 <div style="background:#e8f4fd; padding:20px; border-radius:8px;">
     <h3>Exchange Balances by Currency</h3>
 
+    <!-- Search Box -->
+    <div style="margin-bottom:20px;">
+        <input type="text" id="currencySearch" placeholder="🔍 Search currencies by name or code..."
+               style="width:100%; padding:12px; border:2px solid #ddd; border-radius:8px; font-size:16px;
+                      box-sizing:border-box; transition: border-color 0.3s;" onkeyup="filterCurrencies()">
+    </div>
+
+    <style>
+    #currencySearch:focus {
+        border-color: #1976d2;
+        outline: none;
+        box-shadow: 0 0 5px rgba(25, 118, 210, 0.3);
+    }
+    </style>
+
     <table style="width:100%; border-collapse: collapse; margin-top:20px;">
         <thead>
             <tr style="background:#f8f9fa;">
@@ -33,8 +48,50 @@
 
     <div style="margin-top:20px; padding:15px; background:#f8f9fa; border-radius:5px;">
         <strong>Note:</strong> Balances show your net position in each currency. "NA" indicates zero balance.
+        <br><small id="searchResults" style="color:#666;"></small>
     </div>
 </div>
+
+<script>
+function filterCurrencies() {
+    const input = document.getElementById('currencySearch');
+    const filter = input.value.toUpperCase();
+    const table = document.querySelector('tbody');
+    const rows = table.getElementsByTagName('tr');
+    let visibleCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+        if (cells.length >= 3) {
+            const currencyName = cells[0].textContent || '';
+            const currencyCode = cells[1].textContent || '';
+            const fullText = currencyName + ' ' + currencyCode;
+
+            if (fullText.toUpperCase().indexOf(filter) > -1) {
+                rows[i].style.display = '';
+                visibleCount++;
+            } else {
+                rows[i].style.display = 'none';
+            }
+        }
+    }
+
+    // Update search results count
+    const resultsElement = document.getElementById('searchResults');
+    if (filter.length > 0) {
+        resultsElement.textContent = `Showing ${visibleCount} of ${rows.length} currencies`;
+    } else {
+        resultsElement.textContent = '';
+    }
+}
+
+// Clear search on page load focus
+document.getElementById('currencySearch').addEventListener('focus', function() {
+    if (this.value === '') {
+        filterCurrencies(); // Reset to show all
+    }
+});
+</script>
 
 <div style="margin-top:20px; text-align:center;">
     <a href="{{ url_for('dashboard') }}">🏠 Back to Overview</a>
