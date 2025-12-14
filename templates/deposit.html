@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Deposit - Piggy Bank{% endblock %}
 {% block content %}
-<h2>💰 Deposit Money</h2>
+<h2>💰 Fund Management</h2>
 <div style="background:#e8f4fd; padding:20px; border-radius:8px;">
     <h3>Current Balance: ${{ "%.2f"|format(total_deposits) }}</h3>
     <form method="POST">
@@ -15,10 +15,18 @@
                     <option value="CAD">🇨🇦 CAD</option>
                 </select>
             </td></tr>
+            <tr><td>Type:</td><td>
+                <select name="deposit_type" style="padding:10px; width:100%;">
+                    <option value="add_fund">💰 Add Fund (Add to Available Money)</option>
+                    <option value="withdraw_fund">💸 Withdraw Fund (Subtract from Available Money)</option>
+                    <option value="profit">📈 Exchange Profit (Add to Available Money & Total Profit)</option>
+                    <option value="cost">📉 Exchange Cost (Subtract from Available Money & Total Profit)</option>
+                </select>
+            </td></tr>
             <tr><td>Amount:</td><td><input type="number" name="amount" step="0.01" placeholder="1000" required style="width:100%; padding:10px;"></td></tr>
             <tr><td>Notes:</td><td><textarea name="notes" rows="2" style="width:100%;"></textarea></td></tr>
         </table>
-        <input type="submit" value="💸 DEPOSIT NOW" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; font-size:18px;">
+        <input type="submit" value="💸 PROCESS TRANSACTION" style="width:100%; padding:15px; background:#27ae60; color:white; border:none; font-size:18px;">
     </form>
 </div>
 <div style="margin-top:20px; text-align:center;">

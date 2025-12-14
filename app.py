@@ -223,6 +223,7 @@ class Transaction(db.Model):
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
     is_deposit = db.Column(db.Boolean, default=False)
+    deposit_type = db.Column(db.String(20), default='add_fund')  # add_fund, withdraw_fund, profit, cost
     total_fee_cad = db.Column(db.Float, default=0.0)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
@@ -268,6 +269,11 @@ def add_transaction_columns(engine):
             if 'transaction_reason' not in transaction_columns:
                 conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN transaction_reason VARCHAR(100)'))
                 print("Added transaction_reason column to transaction table")
+            if 'deposit_type' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN deposit_type VARCHAR(20) DEFAULT \'add_fund\''))
+                # Update existing deposits to have the default type
+                conn.execute(text(f'UPDATE "{transaction_table}" SET deposit_type = \'add_fund\' WHERE is_deposit = 1 AND deposit_type IS NULL'))
+                print("Added deposit_type column to transaction table")
     except Exception as e:
         print(f"Error adding transaction columns (may already exist): {e}")
 
@@ -1813,7 +1819,11 @@ def export_csv():
     writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
     total_profit = 0
     for tx in all_tx:
-        profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        # Use total_fee_cad for fund management transactions, otherwise calculate from exchange
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
         total_profit += profit
         writer.writerow([
             tx.tx_ref, tx.date.strftime('%Y-%m-%d %H:%M'),
@@ -1839,34 +1849,74 @@ def deposit():
 
         currency = request.form['currency']
         amount = float(request.form['amount'])
-        notes = request.form.get('notes', f'Deposit {amount} {currency}')
+        deposit_type = request.form.get('deposit_type', 'add_fund')
         tx_ref = generate_tx_ref()
+
+        # Handle different deposit types
+        total_fee_cad = 0.0
+        to_amount = 0
+        notes_prefix = ""
+
+        if deposit_type == 'add_fund':
+            # Add to available money only
+            to_amount = amount
+            notes_prefix = f"Add Fund: +${amount} {currency}"
+        elif deposit_type == 'withdraw_fund':
+            # Subtract from available money only
+            to_amount = -amount
+            notes_prefix = f"Withdraw Fund: -${amount} {currency}"
+        elif deposit_type == 'profit':
+            # Add to available money AND total profit
+            to_amount = amount
+            total_fee_cad = amount
+            notes_prefix = f"Exchange Profit: +${amount} {currency} (added to profit)"
+        elif deposit_type == 'cost':
+            # Subtract from available money AND total profit
+            to_amount = -amount
+            total_fee_cad = -amount
+            notes_prefix = f"Exchange Cost: -${amount} {currency} (subtracted from profit)"
+
+        notes = request.form.get('notes', notes_prefix)
+        if not notes or notes == f'Deposit {amount} {currency}':
+            notes = notes_prefix
 
         new_tx = Transaction(
             tx_ref=tx_ref,
             from_currency=currency,
             to_currency=currency,
             from_amount=0,
-            to_amount=amount,
+            to_amount=to_amount,
             exchange_rate=1.0,
             notes=notes,
-            is_fintrac=(amount >= 10000),
+            is_fintrac=(abs(amount) >= 10000),
             client_id=session['selected_client_id'],
             status=request.form.get('status', 'closed'),
             is_deposit=True,
-            total_fee_cad=0.0,
+            deposit_type=deposit_type,
+            total_fee_cad=total_fee_cad,
             tenant_id=session.get('tenant_id')
         )
         db.session.add(new_tx)
         db.session.commit()
-        flash(f'Deposited ${amount} {currency}!')
+        # Flash appropriate message
+        if deposit_type == 'add_fund':
+            flash(f'✅ Added ${amount} {currency} to available funds!')
+        elif deposit_type == 'withdraw_fund':
+            flash(f'✅ Withdrew ${amount} {currency} from available funds!')
+        elif deposit_type == 'profit':
+            flash(f'✅ Added ${amount} {currency} to funds and profit!')
+        elif deposit_type == 'cost':
+            flash(f'✅ Recorded ${amount} {currency} cost (subtracted from funds and profit)!')
+
         return redirect(url_for('deposit'))
 
     total_deposits = 0
     if client:
-        total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(
+        # Calculate available funds (add_fund + profit - withdraw_fund - cost)
+        deposits_query = db.session.query(func.sum(Transaction.to_amount)).filter_by(
             client_id=client.id, is_deposit=True, tenant_id=session.get('tenant_id')
-        ).scalar() or 0
+        )
+        total_deposits = deposits_query.scalar() or 0
 
     return render_template('deposit.html', total_deposits=total_deposits, client=client)
 
@@ -1887,12 +1937,17 @@ def reports():
 
     for tx in transactions:
         date_str = tx.date.strftime('%Y-%m-%d')
-        profit = 0.0
-        if tx.notes:
-            match = profit_pattern.search(tx.notes)
-            if match:
-                try: profit = float(match.group('profit'))
-                except: profit = 0.0
+
+        # Use total_fee_cad for fund management transactions, otherwise parse notes
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = 0.0
+            if tx.notes:
+                match = profit_pattern.search(tx.notes)
+                if match:
+                    try: profit = float(match.group('profit'))
+                    except: profit = 0.0
 
         volume = round((tx.from_amount + tx.to_amount) / 2, 2)
 
