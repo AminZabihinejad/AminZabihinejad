@@ -1920,6 +1920,33 @@ def deposit():
 
     return render_template('deposit.html', total_deposits=total_deposits, client=client)
 
+@app.route('/account')
+@login_required
+def account():
+    balances = get_balances()
+
+    # Currency names mapping
+    currency_names = {
+        'USD': 'US Dollar',
+        'EUR': 'Euro',
+        'GBP': 'British Pound',
+        'IRR': 'Iranian Rial',
+        'CAD': 'Canadian Dollar'
+    }
+
+    # Prepare balance data for display
+    account_balances = []
+    for currency_code in ['CAD', 'USD', 'EUR', 'GBP', 'IRR']:
+        balance = balances.get(currency_code, 0)
+        display_balance = 'NA' if balance == 0 else f'{balance:.2f}'
+        account_balances.append({
+            'name': currency_names.get(currency_code, currency_code),
+            'code': currency_code,
+            'balance': display_balance
+        })
+
+    return render_template('account.html', account_balances=account_balances)
+
 @app.route('/reports')
 @login_required
 def reports():

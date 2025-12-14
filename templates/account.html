@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Account Balances - Piggy Bank{% endblock %}
+{% block content %}
+<h2>💰 Account Balances</h2>
+
+<div style="background:#e8f4fd; padding:20px; border-radius:8px;">
+    <h3>Exchange Balances by Currency</h3>
+
+    <table style="width:100%; border-collapse: collapse; margin-top:20px;">
+        <thead>
+            <tr style="background:#f8f9fa;">
+                <th style="padding:15px; text-align:left; border-bottom:2px solid #dee2e6; font-weight:bold;">Currency Name</th>
+                <th style="padding:15px; text-align:center; border-bottom:2px solid #dee2e6; font-weight:bold;">Code</th>
+                <th style="padding:15px; text-align:right; border-bottom:2px solid #dee2e6; font-weight:bold;">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for balance in account_balances %}
+            <tr style="border-bottom:1px solid #dee2e6;">
+                <td style="padding:15px; font-weight:500;">{{ balance.name }}</td>
+                <td style="padding:15px; text-align:center; font-weight:bold; color:#1976d2;">{{ balance.code }}</td>
+                <td style="padding:15px; text-align:right; font-weight:bold; color:{% if balance.balance == 'NA' %}#6c757d{% else %}#28a745{% endif %};">
+                    {{ balance.balance }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top:20px; padding:15px; background:#f8f9fa; border-radius:5px;">
+        <strong>Note:</strong> Balances show your net position in each currency. "NA" indicates zero balance.
+    </div>
+</div>
+
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('dashboard') }}">🏠 Back to Overview</a>
+</div>
+{% endblock %}
