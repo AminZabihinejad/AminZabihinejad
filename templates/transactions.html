@@ -57,14 +57,21 @@
     </div>
 
     {% if transactions %}
-        <!-- EXPORT BUTTON -->
+        <!-- EXPORT BUTTONS -->
         <div style="text-align:center; margin-bottom:15px;">
             <a href="{{ url_for('export_csv',
                 from_date=from_date, to_date=to_date,
                 client_name=search_client, from_currency=search_from, to_currency=search_to,
                 fintrac=fintrac, status=status) }}"
-               style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
-                EXPORT {{ total_count }} FILTERED TRANSACTIONS CSV
+               style="background:#27ae60; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold; margin-right:15px;">
+                📊 CSV EXPORT ({{ total_count }} transactions)
+            </a>
+            <a href="{{ url_for('export_pdf',
+                from_date=from_date, to_date=to_date,
+                client_name=search_client, from_currency=search_from, to_currency=search_to,
+                fintrac=fintrac, status=status) }}"
+               style="background:#e74c3c; color:white; padding:15px 25px; text-decoration:none; border-radius:8px; font-size:16px; font-weight:bold;">
+                📄 PDF REPORT ({{ total_count }} transactions)
             </a>
         </div>
 

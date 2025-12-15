@@ -2270,50 +2270,282 @@ def get_live_rate(from_curr, to_curr):
 @app.route('/export')
 @login_required
 def export_csv():
-    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
-    all_tx = query.all() if session.get('is_admin') else \
-             query.filter_by(client_id=session.get('selected_client_id')).all() if session.get('selected_client_id') else []
-
-    search_date = request.args.get('date', '')
+    # Use the same filtering logic as the transactions list
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
     search_client = request.args.get('client_name', '')
-    search_from = request.args.get('from_currency', '')
-    search_to = request.args.get('to_currency', '')
-    search_fintrac = request.args.get('fintrac', '')
-    search_status = request.args.get('status', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
+    status = request.args.get('status', '')
 
-    if search_fintrac == 'yes': all_tx = [tx for tx in all_tx if tx.is_fintrac]
-    elif search_fintrac == 'no': all_tx = [tx for tx in all_tx if not tx.is_fintrac]
-    if search_status: all_tx = [tx for tx in all_tx if tx.status == search_status]
-    if search_date:
-        d = datetime.strptime(search_date, '%Y-%m-%d').date()
-        all_tx = [tx for tx in all_tx if tx.date.date() == d]
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
+    if not session.get('is_admin'):
+        client_id = session.get('selected_client_id')
+        if not client_id:
+            # Return empty CSV if no client selected
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
+            writer.writerow([])
+            writer.writerow(['No data available'])
+            return app.response_class(output.getvalue(), mimetype='text/csv',
+                                    headers={'Content-Disposition': 'attachment;filename=transactions.csv'})
+        query = query.filter(Transaction.client_id == client_id)
+
+    # Apply the same filters as the transactions list
+    if from_date:
+        try: query = query.filter(Transaction.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        except: pass
+    if to_date:
+        try: end_dt = datetime.combine(datetime.strptime(to_date, '%Y-%m-%d'), time.max)
+        except: pass
+        else: query = query.filter(Transaction.date <= end_dt)
+
     if search_client:
-        all_tx = [tx for tx in all_tx if search_client.lower() in f"{tx.client.first_name} {tx.client.last_name}".lower()]
-    if search_from: all_tx = [tx for tx in all_tx if tx.from_currency.upper() == search_from.upper()]
-    if search_to: all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
+        name = f"%{search_client}%"
+        query = query.join(Client).filter(or_(
+            Client.first_name.ilike(name),
+            Client.last_name.ilike(name),
+            func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
+        ))
+    if search_from: query = query.filter(Transaction.from_currency == search_from)
+    if search_to: query = query.filter(Transaction.to_currency == search_to)
+    if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
+    elif fintrac == 'no': query = query.filter(Transaction.is_fintrac == False)
+    if status: query = query.filter(Transaction.status == status)
+
+    # Get all matching transactions (not paginated)
+    all_tx = query.all()
 
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
+
+    # Enhanced CSV headers with all transaction information
+    headers = [
+        'Transaction ID', 'Date & Time', 'Client Name', 'Client Email', 'Client Phone',
+        'From Currency', 'From Amount', 'To Currency', 'To Amount', 'Exchange Rate',
+        'Rate From→CAD', 'Rate To→CAD', 'Payment Method From', 'Payment Method To',
+        'Payment Note', 'Source of Funds', 'Transaction Reason', 'FINTRAC Report',
+        'Status', 'Is Deposit', 'Deposit Type', 'Receipt Filename', 'Notes',
+        'Total Fee (CAD)', 'Profit/Loss'
+    ]
+    writer.writerow(headers)
+
     total_profit = 0
+    total_transactions = len(all_tx)
+
     for tx in all_tx:
-        # Use total_fee_cad for fund management transactions, otherwise calculate from exchange
+        # Calculate profit/loss
         if tx.is_deposit:
             profit = tx.total_fee_cad or 0
         else:
             profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
         total_profit += profit
+
+        # Client information
+        client_name = f"{tx.client.first_name} {tx.client.last_name}" if tx.client else "Unknown"
+        client_email = tx.client.email if tx.client and tx.client.email else ""
+        client_phone = tx.client.phone if tx.client and tx.client.phone else ""
+
+        # Write comprehensive transaction data
         writer.writerow([
-            tx.tx_ref, tx.date.strftime('%Y-%m-%d %H:%M'),
-            f"{tx.client.first_name} {tx.client.last_name}",
-            tx.from_currency, f"{tx.from_amount:.2f}", tx.to_currency,
-            f"{tx.to_amount:.2f}", f"{tx.exchange_rate:.4f}", tx.notes or '',
-            f"${profit:.2f}"
+            tx.tx_ref,
+            tx.date.strftime('%Y-%m-%d %H:%M:%S'),
+            client_name,
+            client_email,
+            client_phone,
+            tx.from_currency,
+            f"{tx.from_amount:.6f}",
+            tx.to_currency,
+            f"{tx.to_amount:.6f}",
+            f"{tx.exchange_rate:.6f}",
+            f"{tx.rate_from_cad:.6f}",
+            f"{tx.rate_to_cad:.6f}",
+            tx.payment_method_from or '',
+            tx.payment_method_to or '',
+            tx.payment_note or '',
+            tx.source_of_funds or '',
+            tx.transaction_reason or '',
+            'YES' if tx.is_fintrac else 'NO',
+            tx.status or 'closed',
+            'YES' if tx.is_deposit else 'NO',
+            tx.deposit_type or '',
+            tx.receipt_filename or '',
+            tx.notes or '',
+            f"{tx.total_fee_cad:.2f}" if tx.total_fee_cad else "0.00",
+            f"{profit:.2f}"
         ])
-    writer.writerow([])
-    writer.writerow([f'TOTAL: {len(all_tx)} | PROFIT: ${total_profit:.2f}'])
+
+    # Summary rows
+    writer.writerow([])  # Empty row
+    writer.writerow(['SUMMARY'])
+    writer.writerow(['Total Transactions', str(total_transactions)])
+    writer.writerow(['Total Profit/Loss (CAD)', f"${total_profit:.2f}"])
+    writer.writerow(['Export Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+
+    # Filter summary if filters were applied
+    filter_info = []
+    if from_date: filter_info.append(f"From Date: {from_date}")
+    if to_date: filter_info.append(f"To Date: {to_date}")
+    if search_client: filter_info.append(f"Client: {search_client}")
+    if search_from: filter_info.append(f"From Currency: {search_from}")
+    if search_to: filter_info.append(f"To Currency: {search_to}")
+    if fintrac: filter_info.append(f"FINTRAC: {fintrac}")
+    if status: filter_info.append(f"Status: {status}")
+
+    if filter_info:
+        writer.writerow([])
+        writer.writerow(['Applied Filters'])
+        for filter_item in filter_info:
+            writer.writerow([filter_item])
+    # Generate descriptive filename
+    filename_parts = ['transactions']
+    if from_date or to_date:
+        date_part = f"{from_date or 'start'}_to_{to_date or 'end'}"
+        filename_parts.append(date_part)
+    if search_client:
+        filename_parts.append(f"client_{search_client.replace(' ', '_')}")
+    filename_parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+
+    filename = '_'.join(filename_parts) + '.csv'
+
     return app.response_class(output.getvalue(), mimetype='text/csv',
-                              headers={'Content-Disposition': 'attachment;filename=transactions.csv'})
+                              headers={'Content-Disposition': f'attachment;filename={filename}'})
+
+
+@app.route('/export_pdf')
+@login_required
+def export_pdf():
+    # Use the same filtering logic as the transactions list and CSV export
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
+    search_client = request.args.get('client_name', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
+    status = request.args.get('status', '')
+
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
+    if not session.get('is_admin'):
+        client_id = session.get('selected_client_id')
+        if not client_id:
+            # Return message if no client selected
+            html_content = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h2>No Data Available</h2>
+                <p>No client selected for PDF report generation.</p>
+            </body>
+            </html>
+            """
+            options = {
+                'orientation': 'Landscape',
+                'page-size': 'A4',
+                'margin-top': '0.25in',
+                'margin-right': '0.25in',
+                'margin-bottom': '0.25in',
+                'margin-left': '0.25in'
+            }
+            pdf_data = pdfkit.from_string(html_content, False, configuration=config_pdf, options=options)
+            return send_file(BytesIO(pdf_data), as_attachment=True,
+                           download_name='no_data_report.pdf', mimetype='application/pdf')
+        query = query.filter(Transaction.client_id == client_id)
+
+    # Apply the same filters as the transactions list
+    if from_date:
+        try: query = query.filter(Transaction.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        except: pass
+    if to_date:
+        try: end_dt = datetime.combine(datetime.strptime(to_date, '%Y-%m-%d'), time.max)
+        except: pass
+        else: query = query.filter(Transaction.date <= end_dt)
+
+    if search_client:
+        name = f"%{search_client}%"
+        query = query.join(Client).filter(or_(
+            Client.first_name.ilike(name),
+            Client.last_name.ilike(name),
+            func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
+        ))
+    if search_from: query = query.filter(Transaction.from_currency == search_from)
+    if search_to: query = query.filter(Transaction.to_currency == search_to)
+    if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
+    elif fintrac == 'no': query = query.filter(Transaction.is_fintrac == False)
+    if status: query = query.filter(Transaction.status == status)
+
+    # Get all matching transactions
+    all_tx = query.all()
+
+    # Generate descriptive filename
+    filename_parts = ['transaction_report']
+    if from_date or to_date:
+        date_part = f"{from_date or 'start'}_to_{to_date or 'end'}"
+        filename_parts.append(date_part.replace('-', ''))
+    if search_client:
+        filename_parts.append(f"client_{search_client.replace(' ', '_')}")
+    filename_parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+    filename = '_'.join(filename_parts) + '.pdf'
+
+    # Calculate summary statistics
+    total_transactions = len(all_tx)
+    total_volume_from = sum(tx.from_amount for tx in all_tx)
+    total_volume_to = sum(tx.to_amount for tx in all_tx)
+    total_profit = 0
+
+    # Additional statistics for comprehensive reporting
+    fintrac_count = sum(1 for tx in all_tx if tx.is_fintrac)
+    deposit_count = sum(1 for tx in all_tx if tx.is_deposit)
+    exchange_count = total_transactions - deposit_count
+    unique_clients = len(set(tx.client_id for tx in all_tx if tx.client))
+
+    for tx in all_tx:
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        total_profit += profit
+
+    # Render PDF template
+    html_content = render_template('transaction_report.html',
+                                 transactions=all_tx,
+                                 total_transactions=total_transactions,
+                                 total_volume_from=total_volume_from,
+                                 total_volume_to=total_volume_to,
+                                 total_profit=total_profit,
+                                 fintrac_count=fintrac_count,
+                                 deposit_count=deposit_count,
+                                 exchange_count=exchange_count,
+                                 unique_clients=unique_clients,
+                                 from_date=from_date,
+                                 to_date=to_date,
+                                 search_client=search_client,
+                                 search_from=search_from,
+                                 search_to=search_to,
+                                 fintrac=fintrac,
+                                 status=status,
+                                 exchange_name=EXCHANGE_NAME,
+                                 current_fee=round(FEE_PERCENTAGE * 100, 1),
+                                 current_flat_fee=round(FLAT_FEE_CAD, 2),
+                                 report_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+    # PDF generation options for landscape orientation
+    options = {
+        'orientation': 'Landscape',
+        'page-size': 'A4',
+        'margin-top': '0.25in',
+        'margin-right': '0.25in',
+        'margin-bottom': '0.25in',
+        'margin-left': '0.25in',
+        'encoding': 'UTF-8',
+        'no-outline': None,
+        'enable-local-file-access': None
+    }
+
+    pdf_data = pdfkit.from_string(html_content, False, configuration=config_pdf, options=options)
+    return send_file(BytesIO(pdf_data), as_attachment=True,
+                   download_name=filename, mimetype='application/pdf')
+
 
 @app.route('/deposit', methods=['GET', 'POST'])
 @login_required
