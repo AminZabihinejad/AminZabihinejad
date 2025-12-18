@@ -6,7 +6,9 @@
 <!-- CLIENT INFO -->
 <div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:15px;">
     <p><strong>Client:</strong> {{ tx.client.first_name }} {{ tx.client.last_name }}<br>
-       <small>Phone: {{ tx.client.phone }} | {{ tx.client.city }}, {{ tx.client.province }}</small></p>
+       <small>Phone: {{ tx.client.phone }} | {{ tx.client.city }}, {{ tx.client.province }}</small>
+       {% if tx.client_2 %}<br><strong style="color:#9c27b0;">Second Client:</strong> {{ tx.client_2.first_name }} {{ tx.client_2.last_name }}<br>
+       <small style="color:#666;">Phone: {{ tx.client_2.phone }} | {{ tx.client_2.city }}, {{ tx.client_2.province }}</small>{% endif %}</p>
 </div>
 
 <form method="POST" id="edit-form" enctype="multipart/form-data">

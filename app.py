@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
     jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from sqlalchemy import func, or_, text
+from sqlalchemy import func, or_, and_, exists, text
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta, time
 import requests
@@ -202,7 +202,7 @@ class Client(db.Model):
     id3_last_download = db.Column(db.DateTime)
 
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
-    transactions = db.relationship('Transaction', backref='client', lazy=True)
+    transactions = db.relationship('Transaction', foreign_keys='Transaction.client_id', lazy=True)
 
 class ExchangeRate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -233,6 +233,7 @@ class Transaction(db.Model):
     transaction_reason = db.Column(db.String(100), nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
+    client_id_2 = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True)
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
     is_deposit = db.Column(db.Boolean, default=False)
@@ -241,6 +242,8 @@ class Transaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
+    client = db.relationship('Client', foreign_keys='Transaction.client_id')
+    client_2 = db.relationship('Client', foreign_keys='Transaction.client_id_2')
 
 # === ADD NEW COLUMNS TO TRANSACTION TABLE ===
 def add_transaction_columns(engine):
@@ -287,6 +290,9 @@ def add_transaction_columns(engine):
                 # Update existing deposits to have the default type
                 conn.execute(text(f'UPDATE "{transaction_table}" SET deposit_type = \'add_fund\' WHERE is_deposit = 1 AND deposit_type IS NULL'))
                 print("Added deposit_type column to transaction table")
+            if 'client_id_2' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN client_id_2 INTEGER REFERENCES client(id)'))
+                print("Added client_id_2 column to transaction table")
     except Exception as e:
         print(f"Error adding transaction columns (may already exist): {e}")
 
@@ -1754,6 +1760,7 @@ def dashboard():
             transaction_reason=transaction_reason,
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
+            client_id_2=session.get('selected_client_id_2'),
             status=status,
             total_fee_cad=total_fee,
             user_id=current_user.id,
@@ -1767,6 +1774,7 @@ def dashboard():
 
     # === LOAD DATA FOR RENDER ===
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
+    client2 = Client.query.get(session.get('selected_client_id_2')) if session.get('selected_client_id_2') else None
     total_volume_usd = 0
     led_color = '#00FF00'
 
@@ -1786,6 +1794,7 @@ def dashboard():
     return render_template(
         'index.html',
         client=client,
+        client2=client2,
         open_transactions=open_transactions,
         total_volume_usd=total_volume_usd,
         led_color=led_color,
@@ -1987,10 +1996,59 @@ def select_customer(client_id):
     if not client:
         flash('Client not found!', 'danger')
         return redirect(url_for('customers'))
-    session['selected_client_id'] = client.id
-    session['selected_client_name'] = f"{client.first_name} {client.last_name}"
-    flash('Client selected!', 'success')
+
+    # Check what action we're performing
+    is_changing_primary = session.pop('changing_primary', False)
+    is_changing_secondary = session.pop('changing_secondary', False)
+
+    if is_changing_primary:
+        # Replace the primary customer
+        session['selected_client_id'] = client.id
+        session['selected_client_name'] = f"{client.first_name} {client.last_name}"
+        flash('Primary client changed!', 'success')
+    elif is_changing_secondary:
+        # Replace the secondary customer (but not if it's the same as primary)
+        if session.get('selected_client_id') != client.id:
+            session['selected_client_id_2'] = client.id
+            session['selected_client_name_2'] = f"{client.first_name} {client.last_name}"
+            flash('Secondary client changed!', 'success')
+        else:
+            flash('Cannot select the same client as primary!', 'warning')
+    elif not session.get('selected_client_id'):
+        # No primary client selected, make this the primary client
+        session['selected_client_id'] = client.id
+        session['selected_client_name'] = f"{client.first_name} {client.last_name}"
+        flash('Primary client selected!', 'success')
+    # If primary client exists and we're not changing it, make this the second client (if not the same as primary)
+    elif session.get('selected_client_id') != client.id:
+        session['selected_client_id_2'] = client.id
+        session['selected_client_name_2'] = f"{client.first_name} {client.last_name}"
+        flash('Second client selected!', 'success')
+    else:
+        flash('Cannot select the same client twice!', 'warning')
+
     return redirect(url_for('dashboard'))
+
+
+@app.route('/clear_second_client')
+@login_required
+def clear_second_client():
+    session.pop('selected_client_id_2', None)
+    session.pop('selected_client_name_2', None)
+    flash('Second client removed!', 'info')
+    return redirect(url_for('dashboard'))
+
+@app.route('/change_primary_client')
+@login_required
+def change_primary_client():
+    session['changing_primary'] = True
+    return redirect(url_for('customers'))
+
+@app.route('/change_secondary_client')
+@login_required
+def change_secondary_client():
+    session['changing_secondary'] = True
+    return redirect(url_for('customers'))
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
 @login_required
@@ -2182,11 +2240,20 @@ def transactions():
 
     if search_client:
         name = f"%{search_client}%"
-        query = query.join(Client).filter(or_(
-            Client.first_name.ilike(name),
-            Client.last_name.ilike(name),
-            func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
-        ))
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
     if search_from: query = query.filter(Transaction.from_currency == search_from)
     if search_to: query = query.filter(Transaction.to_currency == search_to)
     if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
@@ -2304,11 +2371,20 @@ def export_csv():
 
     if search_client:
         name = f"%{search_client}%"
-        query = query.join(Client).filter(or_(
-            Client.first_name.ilike(name),
-            Client.last_name.ilike(name),
-            func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
-        ))
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
     if search_from: query = query.filter(Transaction.from_currency == search_from)
     if search_to: query = query.filter(Transaction.to_currency == search_to)
     if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
@@ -2463,11 +2539,20 @@ def export_pdf():
 
     if search_client:
         name = f"%{search_client}%"
-        query = query.join(Client).filter(or_(
-            Client.first_name.ilike(name),
-            Client.last_name.ilike(name),
-            func.concat(Client.first_name, ' ', Client.last_name).ilike(name)
-        ))
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
     if search_from: query = query.filter(Transaction.from_currency == search_from)
     if search_to: query = query.filter(Transaction.to_currency == search_to)
     if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
@@ -2816,11 +2901,12 @@ def reports():
 def print_receipt(tx_id):
     tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
+    client2 = tx.client_2
 
     profit_cad = round(FLAT_FEE_CAD + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     return render_template('print_receipt.html',
-                           tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                           tx=tx, client=client, client2=client2, exchange_name=EXCHANGE_NAME,
                            profit_cad=profit_cad, flat_fee_cad=FLAT_FEE_CAD,
                            current_fee=round(FEE_PERCENTAGE * 100, 1), fee_percentage=FEE_PERCENTAGE)
 
@@ -2829,10 +2915,11 @@ def print_receipt(tx_id):
 def download_pdf(tx_id):
     tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
+    client2 = tx.client_2
     profit_cad = round(FLAT_FEE_CAD + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     html_content = render_template('print_receipt.html',
-                                   tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                                   tx=tx, client=client, client2=client2, exchange_name=EXCHANGE_NAME,
                                    profit_cad=profit_cad, flat_fee_cad=FLAT_FEE_CAD,
                                    current_fee=round(FEE_PERCENTAGE * 100, 1), fee_percentage=FEE_PERCENTAGE,
                                    is_download=True)

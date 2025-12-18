@@ -107,6 +107,10 @@
                             <td style="padding:8px; white-space:nowrap;">
                                 <strong>{{ tx.client.first_name }} {{ tx.client.last_name }}</strong><br>
                                 <small style="color:#666;">{{ tx.client.phone }}</small>
+                                {% if tx.client_2 %}
+                                    <br><strong style="color:#9c27b0;">+ {{ tx.client_2.first_name }} {{ tx.client_2.last_name }}</strong><br>
+                                    <small style="color:#666;">{{ tx.client_2.phone }}</small>
+                                {% endif %}
                             </td>
 
                             <!-- DATE -->

@@ -64,6 +64,10 @@
     <div class="section">
         <div><span class="label">Client:</span> <span class="value">{{ client.first_name }} {{ client.last_name }}</span></div>
         <div><span class="label">Phone:</span> <span class="value">{{ client.phone }}</span></div>
+        {% if client2 %}
+        <div><span class="label" style="color:#9c27b0;">Second Client:</span> <span class="value" style="color:#9c27b0;">{{ client2.first_name }} {{ client2.last_name }}</span></div>
+        <div><span class="label" style="color:#666;">Phone:</span> <span class="value" style="color:#666;">{{ client2.phone }}</span></div>
+        {% endif %}
     </div>
     <div class="divider"></div>
     <div class="section">

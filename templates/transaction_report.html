@@ -323,7 +323,7 @@
             <tr>
                 <td class="tx-id">{{ tx.tx_ref }}</td>
                 <td>{{ tx.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                <td class="client-name">{{ tx.client.first_name if tx.client else 'Unknown' }} {{ tx.client.last_name if tx.client else '' }}</td>
+                <td class="client-name">{{ tx.client.first_name if tx.client else 'Unknown' }} {{ tx.client.last_name if tx.client else '' }}{% if tx.client_2 %} + {{ tx.client_2.first_name }} {{ tx.client_2.last_name }}{% endif %}</td>
                 <td>{{ tx.client.email if tx.client and tx.client.email else '' }}</td>
                 <td>{{ tx.client.phone if tx.client and tx.client.phone else '' }}</td>
                 <td class="currency">{{ tx.from_currency }}</td>
