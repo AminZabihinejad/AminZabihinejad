@@ -1,39 +1,108 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file, \
+    jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_, exists, text
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta, time
 import requests
 import json
 import csv
-from io import StringIO
+from io import StringIO, BytesIO
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import uuid
 from math import ceil
 import sqlalchemy as sa
 import pdfkit
-import io
-import os
 import imgkit
+import threading
+import time
+from apscheduler.schedulers.background import BackgroundScheduler
+from flask_mail import Mail, Message
+import secrets
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+import pickle
+from cryptography.fernet import Fernet
+from apscheduler.schedulers.background import BackgroundScheduler
+import shutil
+import boto3
+from botocore.exceptions import ClientError
+from pathlib import Path
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from telegram.error import TelegramError  # ADD THIS IMPORT
+# AFTER: from flask_mail import Mail, Message
+from telegram import Bot
+import asyncio
+import threading
+from dotenv import load_dotenv
+import os
+import re
 
-# === EXCHANGE NAME (GLOBAL) ===
+load_dotenv()
+
+
+
+# === CONFIGURATION ===
+BACKUP_MODE = "local"          # "local" | "email" | "s3" | "google_drive"
+BACKUP_LOCAL_DIR = "backups"
+BACKUP_EMAIL_RECIPIENT = "piggy.bank.exchanger@gmail.com"
+S3_BUCKET = "your-moneyexchange-backups"
+S3_PREFIX = "moneyexchange/"
+GOOGLE_DRIVE_FOLDER_ID = "1h1_QuBbPgwxdD1lW5klpsQjQXuKTJ3dB"
+
+# === GLOBALS ===
 EXCHANGE_NAME = "MoneyExchange Pro"
-MAX_USERS = 5  # 5-user package
+FEE_PERCENTAGE = 0.0
+FLAT_FEE_CAD = 5.0
 
+# === UPLOADS BACKUP (SAME METHOD AS DB) ===
+UPLOADS_DIR = Path('uploads')
+BACKUP_UPLOADS_DIR = Path(BACKUP_LOCAL_DIR) / 'uploads'
+BACKUP_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+# === FLASK APP ===
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///moneyexchange.db'
-db = SQLAlchemy(app)
 
-# FLASK-LOGIN SETUP
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+# === ABSOLUTELY REQUIRED ON RENDER.COM ===
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
+)
 
-# ATTACH TO APP (THIS WAS MISSING)
-app.login_manager = login_manager
+# Session & cookies MUST be secure over HTTPS (Render uses HTTPS)
+app.config.update(
+    SECRET_KEY=os.getenv('SECRET_KEY') or 'fallback-dev-key-do-not-use-in-prod-123',  # MUST set in Render Env Vars
+    SESSION_COOKIE_SECURE=True,       # Only send cookie over HTTPS
+    SESSION_COOKIE_SAMESITE='Lax',    # Prevents CSRF + allows redirect
+    SESSION_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SECURE=True,
+    REMEMBER_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=60)
+)
+
+# === CUSTOM JINJA TEST (FIX regex error) ===
+@app.template_test('numeric')
+def is_numeric(value):
+    return bool(re.match(r'^\d+$', str(value).strip())) if value else False
+# === EMAIL CONFIG ===
+app.config.update(
+    MAIL_SERVER='smtp.gmail.com',
+    MAIL_PORT=587,
+    MAIL_USE_TLS=True,
+    MAIL_USERNAME='piggy.bank.exchanger@gmail.com',
+    MAIL_PASSWORD='bsfc smqg nxtd nsxz',
+    MAIL_DEFAULT_SENDER='piggy.bank.exchanger@gmail.com',
+    MAIL_SUPPRESS_SEND=False  # ← CRITICAL FOR DEBUG
+)
 
 # === UPLOAD CONFIG ===
 UPLOAD_FOLDER = 'uploads'
@@ -47,30 +116,67 @@ app.config['RECEIPT_FOLDER'] = RECEIPT_FOLDER
 app.config['ID_UPLOAD_FOLDER'] = ID_UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}
 
+# === INSTANCE PATH (FOR TENANT DBs) ===
+INSTANCE_DIR = Path(app.instance_path)
+os.makedirs(INSTANCE_DIR, exist_ok=True)
+DB_GLOB = "tenant_*.db"
+
+# === EXTENSIONS ===
+db = SQLAlchemy()
+mail = Mail(app)
+login_manager = LoginManager()
+login_manager.login_view = 'login'
+
+# === DEFAULT DB URI ===
+DEFAULT_DB_PATH = INSTANCE_DIR / "tenant_1.db"
+DEFAULT_DB_URI = f"sqlite:///{DEFAULT_DB_PATH.resolve()}"
+app.config['SQLALCHEMY_DATABASE_URI'] = DEFAULT_DB_URI
+
+# === INIT ONCE ===
+db.init_app(app)
+login_manager.init_app(app)
+
 # === MODELS ===
+class Tenant(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    client_name = db.Column(db.String(100), nullable=False)
+    client_email = db.Column(db.String(120), unique=True, nullable=False)
+    client_phone = db.Column(db.String(30))
+    is_active = db.Column(db.Boolean, default=True)
+    max_users = db.Column(db.Integer, default=5)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    users = db.relationship('User', backref='tenant', lazy=True)
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_super_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
+    requires_password_change = db.Column(db.Boolean, default=True)
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), nullable=True)
     phone = db.Column(db.String(20), nullable=False)
     apartment = db.Column(db.String(20))
-    civic_number = db.Column(db.String(20), nullable=False)
+    civic_number = db.Column(db.String(20), nullable=True)
     street = db.Column(db.String(200), nullable=False)
     city = db.Column(db.String(100), nullable=False)
     province = db.Column(db.String(10), nullable=False)
-    postal_code = db.Column(db.String(10), nullable=False)
+    postal_code = db.Column(db.String(10), nullable=True)
+    country = db.Column(db.String(100), nullable=False)
+    job = db.Column(db.String(100), nullable=True)
     risk_level = db.Column(db.String(20), default='low risk')
+    br_status = db.Column(db.String(20), default='active')  # active, inactive, pending
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
+    telegram_id = db.Column(db.String(50), nullable=True)  # ← ADD THIS LINE
     id1_type = db.Column(db.String(50))
     id1_issued_by = db.Column(db.String(100))
     id1_number = db.Column(db.String(50))
@@ -78,7 +184,7 @@ class Client(db.Model):
     id1_filename = db.Column(db.String(255))
     id1_filesize = db.Column(db.Integer)
     id1_last_download = db.Column(db.DateTime)
-
+    telegram_id = db.Column(db.String(50), nullable=True)
     id2_type = db.Column(db.String(50))
     id2_issued_by = db.Column(db.String(100))
     id2_number = db.Column(db.String(50))
@@ -95,59 +201,902 @@ class Client(db.Model):
     id3_filesize = db.Column(db.Integer)
     id3_last_download = db.Column(db.DateTime)
 
-    transactions = db.relationship('Transaction', backref='client', lazy=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
+    transactions = db.relationship('Transaction', foreign_keys='Transaction.client_id', lazy=True)
+
+class ExchangeRate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    from_currency = db.Column(db.String(3), nullable=False)
+    to_currency = db.Column(db.String(3), nullable=False)
+    rate = db.Column(db.Float, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
+
+    __table_args__ = (sa.UniqueConstraint('from_currency', 'to_currency', 'tenant_id', name='unique_currency_pair'),)
 
 class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # AUTO
-    tx_ref = db.Column(db.String(11), unique=True, nullable=False, index=True)  # DISPLAY ID
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    tx_ref = db.Column(db.String(11), unique=True, nullable=False, index=True)
     date = db.Column(db.DateTime, default=datetime.utcnow)
     from_currency = db.Column(db.String(3), nullable=False)
     to_currency = db.Column(db.String(3), nullable=False)
     from_amount = db.Column(db.Float, nullable=False)
     to_amount = db.Column(db.Float, nullable=False)
     exchange_rate = db.Column(db.Float, nullable=False)
+    rate_from_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. USD → CAD
+    rate_to_cad = db.Column(db.Float, nullable=False, default=1.0)  # e.g. EUR → CAD
     notes = db.Column(db.Text, nullable=True)
+    payment_method_from = db.Column(db.String(50), nullable=True, default='Cash')
+    payment_method_to = db.Column(db.String(50), nullable=True, default='Cash')
+    payment_note = db.Column(db.Text, nullable=True)
+    source_of_funds = db.Column(db.String(100), nullable=True)
+    transaction_reason = db.Column(db.String(100), nullable=True)
     is_fintrac = db.Column(db.Boolean, default=False)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
+    client_id_2 = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True)
     receipt_filename = db.Column(db.String(100))
     status = db.Column(db.String(10), default='closed')
     is_deposit = db.Column(db.Boolean, default=False)
-    total_fee_cad = db.Column(db.Float, default=0.0)  # ← PROFIT PER TX
+    deposit_type = db.Column(db.String(20), default='add_fund')  # add_fund, withdraw_fund, profit, cost
+    total_fee_cad = db.Column(db.Float, default=0.0)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=False)
     user = db.relationship('User', backref='transactions')
+    client = db.relationship('Client', foreign_keys='Transaction.client_id')
+    client_2 = db.relationship('Client', foreign_keys='Transaction.client_id_2')
 
-# === DATABASE INIT ===
-with app.app_context():
-    db.create_all()
-    if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin', password='admin123', is_admin=True)
-        db.session.add(admin)
-        db.session.commit()
+# === ADD NEW COLUMNS TO TRANSACTION TABLE ===
+def add_transaction_columns(engine):
+    """Add payment method columns to transaction table if they don't exist"""
+    try:
+        inspector = sa.inspect(engine)
+        # Find the transaction table (might be quoted or have different casing)
+        table_names = inspector.get_table_names()
+        transaction_table = None
+        for t in table_names:
+            if t.lower() == 'transaction':
+                transaction_table = t
+                break
+        
+        if not transaction_table:
+            return
+        
+        transaction_columns = [c['name'] for c in inspector.get_columns(transaction_table)]
+        
+        with engine.begin() as conn:
+            # SQLite doesn't support NOT NULL with DEFAULT in ALTER TABLE for existing tables
+            # So we add as nullable with DEFAULT, then update existing rows
+            # Use double quotes for SQLite table names (transaction is a reserved keyword)
+            if 'payment_method_from' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_method_from VARCHAR(50) DEFAULT \'Cash\''))
+                # Update existing rows to have default value
+                conn.execute(text(f'UPDATE "{transaction_table}" SET payment_method_from = \'Cash\' WHERE payment_method_from IS NULL'))
+                print("Added payment_method_from column to transaction table")
+            if 'payment_method_to' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_method_to VARCHAR(50) DEFAULT \'Cash\''))
+                conn.execute(text(f'UPDATE "{transaction_table}" SET payment_method_to = \'Cash\' WHERE payment_method_to IS NULL'))
+                print("Added payment_method_to column to transaction table")
+            if 'payment_note' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN payment_note TEXT'))
+                print("Added payment_note column to transaction table")
+            if 'source_of_funds' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN source_of_funds VARCHAR(100)'))
+                print("Added source_of_funds column to transaction table")
+            if 'transaction_reason' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN transaction_reason VARCHAR(100)'))
+                print("Added transaction_reason column to transaction table")
+            if 'deposit_type' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN deposit_type VARCHAR(20) DEFAULT \'add_fund\''))
+                # Update existing deposits to have the default type
+                conn.execute(text(f'UPDATE "{transaction_table}" SET deposit_type = \'add_fund\' WHERE is_deposit = 1 AND deposit_type IS NULL'))
+                print("Added deposit_type column to transaction table")
+            if 'client_id_2' not in transaction_columns:
+                conn.execute(text(f'ALTER TABLE "{transaction_table}" ADD COLUMN client_id_2 INTEGER REFERENCES client(id)'))
+                print("Added client_id_2 column to transaction table")
+    except Exception as e:
+        print(f"Error adding transaction columns (may already exist): {e}")
+
+    # Create exchange_rates table if it doesn't exist
+    try:
+        inspector = sa.inspect(engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            ExchangeRate.__table__.create(engine)
+            print("Created exchange_rate table")
+    except Exception as e:
+        print(f"Error creating exchange_rate table: {e}")
+
+# === ADD NEW COLUMNS TO CLIENT TABLE ===
+def add_client_columns(engine):
+    """Add country and job columns to client table if they don't exist"""
+    try:
+        inspector = sa.inspect(engine)
+        if 'client' not in inspector.get_table_names():
+            return
+        
+        client_columns = [c['name'] for c in inspector.get_columns('client')]
+        
+        with engine.begin() as conn:
+            if 'country' not in client_columns:
+                conn.execute(text("ALTER TABLE client ADD COLUMN country VARCHAR(100) NOT NULL DEFAULT 'Canada'"))
+                print("Added country column to client table")
+            if 'job' not in client_columns:
+                conn.execute(text("ALTER TABLE client ADD COLUMN job VARCHAR(100)"))
+                print("Added job column to client table")
+    except Exception as e:
+        print(f"Error adding client columns (may already exist): {e}")
+
+# === MIGRATE CLIENT TABLE (MAKE OPTIONAL FIELDS NULLABLE) ===
+def migrate_client_table(engine):
+    """Migrate client table to make email, civic_number, and postal_code nullable"""
+    try:
+        inspector = sa.inspect(engine)
+        if 'client' not in inspector.get_table_names():
+            return
+        
+        # Check SQL schema directly for NOT NULL constraints
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='client'"))
+            sql_schema = result.fetchone()
+            if not sql_schema or not sql_schema[0]:
+                return
+            
+            schema_sql = sql_schema[0].upper()
+            # Check if columns have NOT NULL constraint in the schema
+            needs_migration = False
+            if 'EMAIL VARCHAR(120) NOT NULL' in schema_sql or 'EMAIL VARCHAR(120)NOT NULL' in schema_sql:
+                needs_migration = True
+            if 'CIVIC_NUMBER VARCHAR(20) NOT NULL' in schema_sql or 'CIVIC_NUMBER VARCHAR(20)NOT NULL' in schema_sql:
+                needs_migration = True
+            if 'POSTAL_CODE VARCHAR(10) NOT NULL' in schema_sql or 'POSTAL_CODE VARCHAR(10)NOT NULL' in schema_sql:
+                needs_migration = True
+        
+        if not needs_migration:
+            return
+        
+        print("Migrating client table to make email, civic_number, and postal_code nullable...")
+        
+        with engine.begin() as conn:  # Use begin() for transaction
+            # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+            # Step 1: Create new table with correct schema
+            conn.execute(text("""
+                CREATE TABLE client_new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    first_name VARCHAR(100) NOT NULL,
+                    last_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(120),
+                    phone VARCHAR(20) NOT NULL,
+                    apartment VARCHAR(20),
+                    civic_number VARCHAR(20),
+                    street VARCHAR(200) NOT NULL,
+                    city VARCHAR(100) NOT NULL,
+                    province VARCHAR(10) NOT NULL,
+                    postal_code VARCHAR(10),
+                    country VARCHAR(100) NOT NULL,
+                    job VARCHAR(100),
+                    risk_level VARCHAR(20),
+                    br_status VARCHAR(20),
+                    notes TEXT,
+                    created_at DATETIME,
+                    telegram_id VARCHAR(50),
+                    id1_type VARCHAR(50),
+                    id1_issued_by VARCHAR(100),
+                    id1_number VARCHAR(50),
+                    id1_expiry_date DATE,
+                    id1_filename VARCHAR(255),
+                    id1_filesize INTEGER,
+                    id1_last_download DATETIME,
+                    id2_type VARCHAR(50),
+                    id2_issued_by VARCHAR(100),
+                    id2_number VARCHAR(50),
+                    id2_expiry_date DATE,
+                    id2_filename VARCHAR(255),
+                    id2_filesize INTEGER,
+                    id2_last_download DATETIME,
+                    id3_type VARCHAR(50),
+                    id3_issued_by VARCHAR(100),
+                    id3_number VARCHAR(50),
+                    id3_expiry_date DATE,
+                    id3_filename VARCHAR(255),
+                    id3_filesize INTEGER,
+                    id3_last_download DATETIME,
+                    tenant_id INTEGER NOT NULL,
+                    FOREIGN KEY(tenant_id) REFERENCES tenant (id)
+                )
+            """))
+            
+            # Step 2: Copy data from old table
+            conn.execute(text("""
+                INSERT INTO client_new 
+                SELECT * FROM client
+            """))
+            
+            # Step 3: Drop old table
+            conn.execute(text("DROP TABLE client"))
+            
+            # Step 4: Rename new table
+            conn.execute(text("ALTER TABLE client_new RENAME TO client"))
+            
+            print("Client table migration completed successfully!")
+    except Exception as e:
+        # Check if migration already completed (table might already have nullable columns)
+        if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+            print("Migration may have already been applied.")
+        else:
+            print(f"Migration error: {e}")
+            raise  # Re-raise if it's a real error
+
+# === DYNAMIC DB SWITCH (CORRECT) ===
+@app.before_request
+def set_tenant_db():
+    tenant_id = session.get('tenant_id') or 1
+    db_path = INSTANCE_DIR / f"tenant_{tenant_id}.db"
+    new_uri = f'sqlite:///{db_path.resolve()}'
+
+    current_uri = app.config.get('SQLALCHEMY_DATABASE_URI')
+    if current_uri != new_uri:
+        db.session.remove()
+        db.engine.dispose()
+        app.config['SQLALCHEMY_DATABASE_URI'] = new_uri
+        db.session.bind = db.create_engine(new_uri, pool_pre_ping=True)
+        db.create_all()
+        # Add new columns if needed
+        add_transaction_columns(db.engine)
+        add_client_columns(db.engine)
+        # Run migration if needed
+        migrate_client_table(db.engine)
+
+# === USER LOADER ===
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 
+# Note: Pending restoration check is handled in the main execution block
 
-# === WKHTMLTOPDF CONFIG (GLOBAL) ===
+# === CREATE DEFAULT DB + SUPER ADMIN ===
+DEFAULT_DB_FILE = INSTANCE_DIR / "tenant_1.db"
+if not DEFAULT_DB_FILE.exists():
+    with app.app_context():
+        db.create_all()
 
-# === AUTO wkhtmltopdf PATH ===
-if os.name == 'nt':  # Windows
+        inspector = sa.inspect(db.engine)
+        user_columns = [c['name'] for c in inspector.get_columns('user')]
+        if 'is_super_admin' not in user_columns:
+            with db.engine.connect() as conn:
+                conn.execute(text('ALTER TABLE user ADD COLUMN is_super_admin BOOLEAN DEFAULT 0'))
+                conn.commit()
+
+        if not db.session.query(Tenant).first():
+            tenant = Tenant(
+                name='MoneyExchange Pro - Admin',
+                client_name='Super Admin',
+                client_email='admin@moneyexchange.com',
+                client_phone='+1 555-000-0000',
+                is_active=True,
+                max_users=5
+            )
+            db.session.add(tenant)
+            db.session.flush()
+
+            admin = User(
+                username='admin',
+                password=generate_password_hash('admin123'),
+                is_admin=True,
+                is_super_admin=True,
+                tenant_id=tenant.id,
+                requires_password_change=False
+            )
+            db.session.add(admin)
+            db.session.commit()
+
+            print("Default super admin account created successfully")
+            print("Login: http://127.0.0.1:5000/login")
+        else:
+            print("Default tenant exists.")
+else:
+    print("Default DB exists.")
+    # Run migrations on existing database
+    with app.app_context():
+        add_transaction_columns(db.engine)
+        add_client_columns(db.engine)
+        migrate_client_table(db.engine)
+
+# === WKHTMLTOPDF ===
+if os.name == 'nt':
     WKHTMLTOPDF_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe'
     WKHTMLTOIMAGE_PATH = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
-else:  # Render (Linux)
+else:
     WKHTMLTOPDF_PATH = '/usr/bin/wkhtmltopdf'
     WKHTMLTOIMAGE_PATH = '/usr/bin/wkhtmltoimage'
 
-# Validate paths
 if not os.path.exists(WKHTMLTOPDF_PATH):
     raise FileNotFoundError(f"wkhtmltopdf not found: {WKHTMLTOPDF_PATH}")
 
 config_pdf = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
 config_img = imgkit.config(wkhtmltoimage=WKHTMLTOIMAGE_PATH)
 
-# === GLOBALS ===
-FEE_PERCENTAGE = 0.0
-FLAT_FEE_CAD = 5.0
+# === GOOGLE DRIVE BACKUP ===
+# === GOOGLE DRIVE BACKUP (FIXED) ===
+# === GOOGLE DRIVE BACKUP (100% WORKING) ===
+# === GOOGLE DRIVE BACKUP (100% WORKING + DEBUG) ===
+# === FIXED ENCRYPTION KEY (NEVER NONE AGAIN) ===
+def get_encryption_key():
+    key = os.getenv('DB_ENCRYPT_KEY')
+    if not key:
+        # AUTO-GENERATE if missing (safe for local dev)
+        key = Fernet.generate_key().decode()
+        print("WARNING: DB_ENCRYPT_KEY missing! Generated temporary key (will break on restart)")
+        print(f"TEMP KEY: {key}")
+        print("ADD THIS TO RENDER.COM ENV VARS NOW!")
+    # Always return bytes
+    return key.encode()
 
-# === HELPERS ===
+KEY = get_encryption_key()  # ← NOW 100% SAFE
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+TOKEN_FILE = 'token.pickle'
+CREDS_FILE = 'credentials.json'
+FOLDER_ID = '1h1_QuBbPgwxdD1lW5klpsQjQXuKTJ3dB'
+
+def encrypt_db(db_path, key_bytes):
+    try:
+        f = Fernet(key_bytes)
+        with open(db_path, 'rb') as file:
+            data = file.read()
+        encrypted = f.encrypt(data)
+        encrypted_path = db_path + '.encrypted'
+        with open(encrypted_path, 'wb') as file:
+            file.write(encrypted)
+        print(f"ENCRYPTED: {db_path} → {encrypted_path}")
+        return encrypted_path
+    except Exception as e:
+        print(f"ENCRYPT FAILED: {e}")
+        return None
+
+def encrypt_file(input_path, key_bytes):
+    """Encrypt any file (ZIP, PDF, etc.)"""
+    f = Fernet(key_bytes)
+    with open(input_path, 'rb') as file:
+        data = file.read()
+    encrypted = f.encrypt(data)
+    encrypted_path = input_path.with_suffix('.enc')
+    with open(encrypted_path, 'wb') as file:
+        file.write(encrypted)
+    return encrypted_path
+
+def backup_uploads():
+    """Compress, encrypt, and send uploads/ folder"""
+    if not UPLOADS_DIR.exists() or not any(UPLOADS_DIR.iterdir()):
+        print("UPLOADS FOLDER EMPTY — SKIPPING")
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_name = f"uploads_backup_{timestamp}"
+    zip_path = BACKUP_UPLOADS_DIR / f"{zip_name}.zip"
+
+    print(f"COMPRESSING uploads/ → {zip_path}")
+    shutil.make_archive(str(zip_path.with_suffix('')), 'zip', UPLOADS_DIR)
+
+    # === ENCRYPT ZIP ===
+    encrypted_zip = encrypt_file(zip_path, KEY)
+    os.remove(zip_path)  # delete unencrypted
+
+    # === SEND VIA SAME METHOD AS DB ===
+    result = send_backup_file(str(encrypted_zip), f"UPLOADS_{timestamp}.zip.enc")
+    if result:
+        print(f"UPLOADS BACKUP SUCCESS: {result}")
+        os.remove(encrypted_zip)
+    else:
+        print("UPLOADS BACKUP FAILED")
+
+def send_backup_file(file_path, filename):
+    """REUSE SAME LOGIC AS DB BACKUP"""
+    mode = BACKUP_MODE
+
+    if mode == "email":
+        try:
+            with open(file_path, 'rb') as f:
+                data = f.read()
+            msg = Message(
+                subject=f"MoneyExchange UPLOADS Backup – {datetime.now():%Y-%m-%d %H:%M}",
+                recipients=[BACKUP_EMAIL_RECIPIENT],
+                sender=app.config['MAIL_DEFAULT_SENDER']
+            )
+            msg.attach(
+                filename=filename,
+                content_type='application/octet-stream',
+                data=data
+            )
+            with app.app_context():
+                mail.send(msg)
+            return f"EMAIL → {BACKUP_EMAIL_RECIPIENT}"
+        except Exception as e:
+            print(f"UPLOADS EMAIL FAILED: {e}")
+            return None
+
+    elif mode == "local":
+        final_path = BACKUP_UPLOADS_DIR / filename
+        shutil.move(file_path, final_path)
+        return f"LOCAL → {final_path}"
+
+    elif mode == "s3":
+        s3 = boto3.client('s3')
+        key_name = f"{S3_PREFIX}uploads_{filename}"
+        try:
+            s3.upload_file(
+                file_path, S3_BUCKET, key_name,
+                ExtraArgs={'ServerSideEncryption': 'AES256'}
+            )
+            os.remove(file_path)
+            return f"S3 → s3://{S3_BUCKET}/{key_name}"
+        except Exception as e:
+            print(f"S3 UPLOAD FAILED: {e}")
+            return None
+
+    elif mode == "google_drive":
+        # Reuse upload_to_drive logic
+        try:
+            service = authenticate_drive()
+            if not service:
+                return None
+            file_metadata = {
+                'name': filename,
+                'parents': [GOOGLE_DRIVE_FOLDER_ID]
+            }
+            media = MediaFileUpload(file_path, mimetype='application/octet-stream')
+            file = service.files().create(
+                body=file_metadata, media_body=media, fields='id'
+            ).execute()
+            os.remove(file_path)
+            return f"DRIVE ID: {file.get('id')}"
+        except Exception as e:
+            print(f"DRIVE UPLOAD FAILED: {e}")
+            return None
+
+    return None
+
+
+def backup_local(db_path, key):
+    os.makedirs(BACKUP_LOCAL_DIR, exist_ok=True)
+    encrypted_path = encrypt_db(db_path, key)
+    if not encrypted_path:
+        return None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    final_path = os.path.join(
+        BACKUP_LOCAL_DIR,
+        f"{os.path.basename(db_path)}_{timestamp}.encrypted"
+    )
+    shutil.move(encrypted_path, final_path)
+    print(f"LOCAL BACKUP: {final_path}")
+    return final_path
+
+def backup_email(db_path, key):
+    encrypted_path = encrypt_db(db_path, key)
+    if not encrypted_path:
+        return None
+
+    filename = os.path.basename(encrypted_path)
+    subject = f"MoneyExchange DB Backup – {datetime.now():%Y-%m-%d %H:%M}"
+    body = (
+        f"Encrypted backup of {os.path.basename(db_path)} is attached.\n\n"
+        f"Generated on: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        f"Use this key to decrypt: {KEY}\n\n"
+        "Warning: Keep this key secure!"
+    )
+
+    try:
+        msg = Message(
+            subject=subject,
+            recipients=[BACKUP_EMAIL_RECIPIENT],
+            body=body,
+            sender=app.config['MAIL_DEFAULT_SENDER']
+        )
+        with open(encrypted_path, "rb") as f:
+            encrypted_data = f.read()
+        msg.attach(
+            filename=filename,
+            content_type='application/octet-stream',
+            data=encrypted_data
+        )
+
+        # === FIX: ADD APP CONTEXT ===
+        with app.app_context():
+            mail.send(msg)
+        print(f"EMAIL BACKUP SENT → {BACKUP_EMAIL_RECIPIENT}")
+
+    except Exception as e:
+        print(f"EMAIL BACKUP FAILED: {e}")
+        if os.path.exists(encrypted_path):
+            os.remove(encrypted_path)
+        return None
+    else:
+        os.remove(encrypted_path)
+        return encrypted_path
+
+def backup_s3(db_path, key):
+    encrypted_path = encrypt_db(db_path, key)
+    if not encrypted_path:
+        return None
+
+    s3 = boto3.client('s3')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    key_name = f"{S3_PREFIX}{os.path.basename(db_path)}_{timestamp}.encrypted"
+
+    try:
+        s3.upload_file(
+            encrypted_path,
+            S3_BUCKET,
+            key_name,
+            ExtraArgs={'ServerSideEncryption': 'AES256'}
+        )
+        print(f"S3 BACKUP: s3://{S3_BUCKET}/{key_name}")
+    except ClientError as e:
+        print(f"S3 UPLOAD FAILED: {e}")
+        os.remove(encrypted_path)
+        return None
+
+    os.remove(encrypted_path)
+    return key_name
+
+def backup_one_file(db_path):
+    """Encrypt + route to the selected backup method."""
+    if BACKUP_MODE == "local":
+        return backup_local(db_path, KEY)
+    elif BACKUP_MODE == "email":
+        return backup_email(db_path, KEY)
+    elif BACKUP_MODE == "s3":
+        return backup_s3(db_path, KEY)
+    elif BACKUP_MODE == "google_drive":
+        return upload_to_drive(str(db_path), FOLDER_ID)  # ← CALL GOOGLE DRIVE!
+    else:
+        print(f"UNKNOWN BACKUP_MODE: {BACKUP_MODE}")
+        return None
+
+# AFTER: def backup_one_file(...)
+
+def authenticate_drive():
+    try:
+        creds = None
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, 'rb') as token:
+                creds = pickle.load(token)
+            print("Loaded token.pickle")
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                print("Token refreshed")
+            else:
+                print("No valid token. Opening browser for auth...")
+                flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open(TOKEN_FILE, 'wb') as token:
+                pickle.dump(creds, token)
+            print("Saved new token.pickle")
+        return build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        print(f"AUTH FAILED: {e}")
+        return None
+
+def upload_to_drive(db_path, folder_id):
+    if not os.path.exists(db_path):
+        print(f"DB FILE NOT FOUND: {db_path}")
+        return None
+    try:
+        service = authenticate_drive()
+        if not service:
+            print("Google Drive auth failed.")
+            return None
+        encrypted_path = encrypt_db(db_path, KEY)
+        if not encrypted_path:
+            return None
+        file_metadata = {
+            'name': f'backup_{os.path.basename(db_path)}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.encrypted',
+            'parents': [folder_id]
+        }
+        media = MediaFileUpload(encrypted_path, mimetype='application/octet-stream')
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        os.remove(encrypted_path)
+        file_id = file.get('id')
+        print(f"BACKED UP: {db_path} → Google Drive ID: {file_id}")
+        return file_id
+    except Exception as e:
+        print(f"UPLOAD FAILED: {e}")
+        return None
+
+# === BACKUP ALL DB FILES (NO DB QUERY!) ===
+def backup_all_tenants():
+    db_files = list(INSTANCE_DIR.glob(DB_GLOB))
+    if not db_files:
+        print("NO TENANT DB FILES FOUND in instance folder!")
+    else:
+        print(f"FOUND {len(db_files)} DB files:")
+        for f in db_files:
+            print(f" → {f} (exists: {f.exists()})")
+        for db_path in db_files:
+            result = backup_one_file(str(db_path))
+            if result:
+                print(f"SUCCESS: {db_path.name} → {result}")
+            else:
+                print(f"FAILED: {db_path.name}")
+
+    # === BACKUP UPLOADS FOLDER ===
+    backup_uploads()
+
+
+# === SCHEDULE ===
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=backup_all_tenants, trigger="interval", minutes=30)  # ← EVERY 30 MIN FOR PRODUCTION
+scheduler.start()
+
+# === MANUAL BACKUP ROUTE (SUPER ADMIN ONLY) ===
+@app.route('/backup_now')
+@login_required
+def backup_now():
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    backup_all_tenants()
+    flash('Backup completed! Check the chosen destination.', 'success')
+    return redirect(url_for('profile'))
+
+@app.route('/download_backups')
+@login_required
+def download_backups():
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    # Get all tenants for client names
+    tenants = Tenant.query.all()
+    tenant_dict = {tenant.id: {'name': tenant.name, 'client_name': tenant.client_name} for tenant in tenants}
+
+    # Group backup files by tenant/client
+    client_backups = {}
+
+    # Database backups
+    if os.path.exists(BACKUP_LOCAL_DIR):
+        for file in os.listdir(BACKUP_LOCAL_DIR):
+            if file.endswith('.encrypted'):
+                filepath = os.path.join(BACKUP_LOCAL_DIR, file)
+                size = os.path.getsize(filepath)
+                mtime = os.path.getmtime(filepath)
+
+                # Extract tenant_id from filename (tenant_X.db_...)
+                tenant_id = None
+                if file.startswith('tenant_'):
+                    try:
+                        tenant_part = file.split('tenant_')[1].split('.')[0]
+                        tenant_id = int(tenant_part)
+                    except (ValueError, IndexError):
+                        pass
+
+                client_info = tenant_dict.get(tenant_id, {'name': f'Tenant {tenant_id}', 'client_name': f'Unknown Client'})
+
+                if tenant_id not in client_backups:
+                    client_backups[tenant_id] = {
+                        'tenant_id': tenant_id,
+                        'client_name': client_info['client_name'],
+                        'tenant_name': client_info['name'],
+                        'database_backups': [],
+                        'uploads_backups': []
+                    }
+
+                client_backups[tenant_id]['database_backups'].append({
+                    'filename': file,
+                    'size': size,
+                    'date': datetime.fromtimestamp(mtime),
+                    'type': 'database'
+                })
+
+    # Uploads backups
+    if os.path.exists(BACKUP_UPLOADS_DIR):
+        for file in os.listdir(BACKUP_UPLOADS_DIR):
+            if file.endswith('.enc'):
+                filepath = os.path.join(BACKUP_UPLOADS_DIR, file)
+                size = os.path.getsize(filepath)
+                mtime = os.path.getmtime(filepath)
+
+                # For uploads, we need to associate with tenant somehow
+                # Since uploads are shared, we'll put them under a general category
+                # or try to extract tenant info if available in filename
+                tenant_id = 0  # Use 0 for general/shared uploads
+
+                if tenant_id not in client_backups:
+                    client_backups[tenant_id] = {
+                        'tenant_id': tenant_id,
+                        'client_name': 'Shared/System',
+                        'tenant_name': 'Uploads & System',
+                        'database_backups': [],
+                        'uploads_backups': []
+                    }
+
+                client_backups[tenant_id]['uploads_backups'].append({
+                    'filename': file,
+                    'size': size,
+                    'date': datetime.fromtimestamp(mtime),
+                    'type': 'uploads'
+                })
+
+    # Sort backups within each client by date (newest first)
+    for client_data in client_backups.values():
+        client_data['database_backups'].sort(key=lambda x: x['date'], reverse=True)
+        client_data['uploads_backups'].sort(key=lambda x: x['date'], reverse=True)
+
+    # Convert to list and sort clients by name
+    client_backups_list = list(client_backups.values())
+    client_backups_list.sort(key=lambda x: (x['tenant_id'] == 0, x['client_name']))  # Shared/System first, then alphabetical
+
+    # Check if there's a pending restoration
+    restoration_pending = os.path.exists(RESTORE_PENDING_FILE)
+
+    return render_template('download_backups.html',
+                         client_backups=client_backups_list,
+                         restoration_pending=restoration_pending)
+
+@app.route('/download_backup_file/<path:filename>')
+@login_required
+def download_backup_file(filename):
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    # Security check - only allow downloading from backup directories
+    backup_dir = None
+    if filename.endswith('.encrypted'):
+        backup_dir = BACKUP_LOCAL_DIR
+    elif filename.endswith('.enc'):
+        backup_dir = str(BACKUP_UPLOADS_DIR)
+
+    if backup_dir and os.path.exists(os.path.join(backup_dir, filename)):
+        return send_from_directory(backup_dir, filename, as_attachment=True)
+    else:
+        flash('Backup file not found!', 'danger')
+        return redirect(url_for('download_backups'))
+
+
+RESTORE_PENDING_FILE = 'instance/restore_pending.json'
+
+def check_pending_restoration():
+    """Check for and complete any pending database restorations on startup"""
+    if not os.path.exists(RESTORE_PENDING_FILE):
+        return False
+
+    try:
+        import json
+        with open(RESTORE_PENDING_FILE, 'r') as f:
+            pending_data = json.load(f)
+
+        tenant_id = pending_data['tenant_id']
+        restored_db_path = pending_data['restored_db_path']
+
+        db_path = f'instance/tenant_{tenant_id}.db'
+
+        # Since the database might be locked by running processes, we'll use a different approach:
+        # Replace the database file by copying the content instead of renaming
+
+        if os.path.exists(restored_db_path):
+            # Step 1: Backup current database by copying it
+            if os.path.exists(db_path):
+                backup_current = f'{db_path}.backup_before_restore_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                import shutil
+                shutil.copy2(db_path, backup_current)
+
+            # Step 2: Replace database content by copying
+            shutil.copy2(restored_db_path, db_path)
+
+            # Clean up the temporary restored file
+            os.remove(restored_db_path)
+
+        else:
+            return False
+
+        # Step 3: Clean up pending file
+        os.remove(RESTORE_PENDING_FILE)
+        print("Database restoration completed successfully!")
+
+        return True
+
+    except Exception as e:
+        print(f"Error completing pending restoration: {e}")
+        return False
+
+
+# === CHECK FOR PENDING DATABASE RESTORATION ===
+# This must happen BEFORE any database connections are established
+check_pending_restoration()
+
+
+@app.route('/restore_database/<path:filename>', methods=['POST'])
+@login_required
+def restore_database(filename):
+    if not current_user.is_super_admin:
+        flash('SUPER ADMIN ONLY!', 'danger')
+        return redirect(url_for('profile'))
+
+    try:
+        # Security check - only allow restoring from local backup directory
+        backup_file_path = os.path.join(BACKUP_LOCAL_DIR, filename)
+        if not os.path.exists(backup_file_path):
+            flash('Backup file not found!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Validate filename format (should be tenant_X.db_YYYYMMDD_HHMMSS.encrypted)
+        if not filename.startswith('tenant_') or not filename.endswith('.encrypted'):
+            flash('Invalid backup file format!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Extract tenant ID from filename
+        try:
+            tenant_id = int(filename.split('tenant_')[1].split('.db_')[0])
+        except (IndexError, ValueError):
+            flash('Could not determine tenant from backup filename!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Get tenant info
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            flash('Tenant not found for this backup!', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Database file path
+        db_path = f'instance/tenant_{tenant_id}.db'
+
+        print(f"🔄 STARTING DATABASE RESTORATION: {filename}")
+        print(f"📁 Tenant: {tenant.name} (ID: {tenant_id})")
+        print(f"🎯 Target DB: {db_path}")
+
+        # Step 1: Decrypt the backup file
+        print("🔓 Decrypting backup file...")
+        fernet = Fernet(KEY)
+
+        with open(backup_file_path, 'rb') as enc_file:
+            encrypted_data = enc_file.read()
+
+        decrypted_data = fernet.decrypt(encrypted_data)
+        restored_db_path = f'{db_path}.restored'
+
+        with open(restored_db_path, 'wb') as dec_file:
+            dec_file.write(decrypted_data)
+
+        print(f"✅ Decrypted backup to: {restored_db_path}")
+
+        # Step 2: Verify the decrypted database before proceeding
+        try:
+            import sqlite3
+            conn = sqlite3.connect(restored_db_path)
+            conn.execute("SELECT COUNT(*) FROM client").fetchone()
+            conn.close()
+            print("✅ Restored database integrity check passed")
+        except Exception as e:
+            os.remove(restored_db_path)  # Clean up corrupted file
+            print(f"❌ Restored database integrity check failed: {e}")
+            flash('❌ Database restoration failed - backup file appears to be corrupted.', 'danger')
+            return redirect(url_for('download_backups'))
+
+        # Step 3: Create pending restoration marker
+        import json
+        pending_data = {
+            'tenant_id': tenant_id,
+            'restored_db_path': restored_db_path,
+            'timestamp': datetime.now().isoformat(),
+            'backup_filename': filename
+        }
+
+        # Create instance directory if it doesn't exist
+        os.makedirs('instance', exist_ok=True)
+
+        with open(RESTORE_PENDING_FILE, 'w') as f:
+            json.dump(pending_data, f, indent=2)
+
+        flash('✅ Database restoration prepared! Please restart the application to complete the restoration.', 'success')
+
+        return redirect(url_for('download_backups'))
+
+    except Exception as e:
+        print(f"❌ DATABASE RESTORATION PREPARATION FAILED: {e}")
+        flash(f'❌ Database restoration preparation failed: {str(e)}', 'danger')
+        return redirect(url_for('download_backups'))
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -161,8 +1110,8 @@ def save_id_file(file, client_id, id_num):
     return None, None
 
 def interpolate_color(volume):
-    min_volume = 3000
-    max_volume = 10000
+    min_volume = 1000
+    max_volume = 30000
     if volume < min_volume: return "#00FF00"
     if volume >= max_volume: return "#FF0000"
     ratio = (volume - min_volume) / (max_volume - min_volume)
@@ -177,10 +1126,15 @@ def convert_to_usd(amount, currency):
 def calculate_clients_data():
     search = request.args.get('search', '')
     risk_level = request.args.get('risk_level', '')
-    query = Client.query.order_by(Client.created_at.desc())
+    query = Client.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Client.created_at.desc())
 
     if search:
-        query = query.filter(or_(Client.first_name.ilike(f'%{search}%'), Client.last_name.ilike(f'%{search}%'), Client.phone.ilike(f'%{search}%')))
+        search_term = f"%{search}%"
+        query = query.filter(or_(
+            Client.first_name.ilike(search_term),
+            Client.last_name.ilike(search_term),
+            func.concat(Client.first_name, ' ', Client.last_name).ilike(search_term)
+        ))
     if risk_level:
         query = query.filter(Client.risk_level == risk_level)
 
@@ -208,7 +1162,6 @@ def calculate_clients_data():
     return clients_data
 
 def generate_tx_ref():
-    """Generate tx_ref like 20251025001 using UTC date"""
     today = datetime.utcnow().strftime('%Y%m%d')
     last_tx = Transaction.query.filter(
         Transaction.tx_ref.like(f"{today}%")
@@ -222,18 +1175,215 @@ def generate_tx_ref():
             seq = 1
     return f"{today}{seq:03d}"
 
+def fetch_exchange_rates():
+    """Fetch live exchange rates from XE.com API or fallback to exchangerate-api.com"""
+    try:
+        # First try XE's API (requires authentication, may not work)
+        xe_api_url = "https://xecdapi.xe.com/v1/convert_from"
+        headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; CurrencyExchange/1.0)'
+        }
+
+        # Try XE API first (if available)
+        try:
+            xe_response = requests.get(f"{xe_api_url}?from=USD", headers=headers, timeout=10)
+            if xe_response.status_code == 200:
+                xe_data = xe_response.json()
+                if 'to' in xe_data and 'USD' in xe_data['to']:
+                    print("SUCCESS: Using XE.com API rates")
+                    rates = xe_data['to']
+                    # Convert to CAD base rates for storage
+                    cad_rate = rates.get('CAD', 1.0)
+                    rates = {curr: rate / cad_rate for curr, rate in rates.items()}
+                else:
+                    raise ValueError("XE API response format unexpected")
+            else:
+                raise ValueError(f"XE API returned status {xe_response.status_code}")
+        except Exception as xe_error:
+            print(f"XE API failed ({xe_error}), falling back to exchangerate-api.com")
+            # Fallback to exchangerate-api.com with USD base (gives more intuitive rates)
+            fallback_response = requests.get('https://api.exchangerate-api.com/v4/latest/USD', timeout=10)
+            fallback_data = fallback_response.json()
+            if 'rates' in fallback_data:
+                rates = fallback_data['rates']
+                print("SUCCESS: Using live rates from exchangerate-api.com (XE API requires authentication)")
+            else:
+                raise ValueError("Both APIs failed")
+
+        # Use tenant_id 1 as default
+        try:
+            tenant_id = session.get('tenant_id', 1)
+        except RuntimeError:
+            # No session context available
+            tenant_id = 1
+
+        # Update rates for all currencies we support
+        currency_codes = ['USD', 'EUR', 'GBP', 'CHF', 'AUD', 'MXN', 'JPY', 'CNY', 'AED', 'IRR',
+                        'BRL', 'INR', 'SAR', 'EGP', 'THB', 'KRW', 'ZAR', 'TRY', 'PLN', 'SEK',
+                        'NOK', 'DKK', 'CZK', 'HUF', 'ILS', 'RUB', 'PHP', 'IDR', 'MYR', 'SGD',
+                        'HKD', 'TWD', 'NZD', 'ARS', 'CLP', 'COP', 'PEN', 'RON', 'JOD', 'KWD',
+                        'BHD', 'OMR', 'QAR', 'MAD', 'KES', 'TND', 'DOP', 'UYU', 'GTQ', 'CRC',
+                        'HNL', 'BSD', 'BBD', 'KYD', 'XCD', 'TZS', 'ISK', 'JMD', 'BGL', 'LBP',
+                        'IQD', 'GNF', 'XAF', 'XOF', 'UAH', 'VND']
+
+        with app.app_context():
+            updated_count = 0
+            # Get CAD rate from USD base API (1 USD = X CAD)
+            usd_to_cad_rate = rates.get('CAD', 1.0)
+
+            for currency in currency_codes:
+                if currency in rates:
+                    # Convert to CAD base: if "1 USD = rates[currency] currency", then "1 CAD = rates[currency] / usd_to_cad_rate currency"
+                    cad_base_rate = rates[currency] / usd_to_cad_rate if usd_to_cad_rate > 0 else rates[currency]
+
+                    # Store rate (1 CAD = X currency)
+                    rate_record = ExchangeRate.query.filter_by(
+                        from_currency='CAD',
+                        to_currency=currency,
+                        tenant_id=tenant_id
+                    ).first()
+
+                    if rate_record:
+                        rate_record.rate = cad_base_rate
+                        rate_record.last_updated = datetime.utcnow()
+                    else:
+                        rate_record = ExchangeRate(
+                            from_currency='CAD',
+                            to_currency=currency,
+                            rate=cad_base_rate,
+                            tenant_id=tenant_id
+                        )
+                        db.session.add(rate_record)
+                    updated_count += 1
+
+            db.session.commit()
+            print(f"SUCCESS: Updated {updated_count} live exchange rates (XE.com preferred, fallback to exchangerate-api.com)")
+            return True
+
+    except Exception as e:
+        print(f"ERROR: Error fetching exchange rates: {e}")
+        return False
+
+def get_exchange_rates_to_cad():
+    """Get current exchange rates to CAD from database"""
+    try:
+        tenant_id = session.get('tenant_id', 1)
+    except RuntimeError:
+        # No session context available
+        tenant_id = 1
+
+    rates = {}
+
+    try:
+        # Check if table exists first
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            print("Exchange rate table doesn't exist, fetching rates...")
+            fetch_exchange_rates()
+
+        rate_records = ExchangeRate.query.filter_by(
+            from_currency='CAD',
+            tenant_id=tenant_id
+        ).all()
+
+        for record in rate_records:
+            rates[record.to_currency] = record.rate
+
+        # If no rates in database, fetch them
+        if not rates:
+            print("No rates in database, fetching from API...")
+            fetch_exchange_rates()
+            # Try again after fetching
+            rate_records = ExchangeRate.query.filter_by(
+                from_currency='CAD',
+                tenant_id=tenant_id
+            ).all()
+            for record in rate_records:
+                rates[record.to_currency] = record.rate
+
+    except Exception as e:
+        print(f"Error getting exchange rates: {e}")
+        # Return empty dict if there's an error
+        return {}
+
+    return rates
+
+def get_exchange_rates_from_usd():
+    """Get exchange rates from database in USD base format (1 USD = X currency) - for display"""
+    try:
+        tenant_id = session.get('tenant_id', 1)
+    except RuntimeError:
+        # No session context available
+        tenant_id = 1
+
+    try:
+        # Check if table exists first
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if 'exchange_rate' not in inspector.get_table_names():
+            return {}
+
+        rate_records = ExchangeRate.query.filter_by(
+            from_currency='CAD',
+            tenant_id=tenant_id
+        ).all()
+
+        # Find USD rate to convert
+        usd_to_cad_rate = None
+        for record in rate_records:
+            if record.to_currency == 'USD':
+                usd_to_cad_rate = record.rate  # 1 CAD = X USD
+                break
+
+        if not usd_to_cad_rate or usd_to_cad_rate <= 0:
+            return {}
+
+        # Convert all rates to USD base
+        usd_base_rates = {}
+        for record in rate_records:
+            # If 1 CAD = record.rate currency, then 1 USD = (record.rate / usd_to_cad_rate) currency
+            usd_base_rates[record.to_currency] = record.rate / usd_to_cad_rate
+
+        # Add CAD rate (inverse of USD rate)
+        usd_base_rates['CAD'] = 1.0 / usd_to_cad_rate
+
+        return usd_base_rates
+
+    except Exception as e:
+        print(f"Error getting USD base exchange rates: {e}")
+        return {}
+
+def fetch_exchange_rates_job():
+    """Wrapper function for scheduler to run with app context"""
+    with app.app_context():
+        fetch_exchange_rates()
+
+def start_rate_scheduler():
+    """Start background scheduler to update rates every 10 minutes"""
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=fetch_exchange_rates_job, trigger="interval", minutes=10, id='fetch_rates')
+    scheduler.start()
+
+    # Initial fetch
+    with app.app_context():
+        fetch_exchange_rates()
+
+    print("SUCCESS: Exchange rate scheduler started - updates every 10 minutes")
+
 def get_balances():
     if 'user_id' not in session: return {}
     client_id = session.get('selected_client_id')
     if session.get('is_admin') and not client_id:
-        transactions = Transaction.query.all()
+        transactions = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).all()
     else:
         if not client_id: return {}
-        transactions = Transaction.query.filter_by(client_id=client_id).all()
+        transactions = Transaction.query.filter_by(client_id=client_id, tenant_id=session.get('tenant_id')).all()
 
     balances = {}
     for tx in transactions:
-        if tx.from_amount == 0:
+        if tx.is_deposit:
             balances[tx.to_currency] = balances.get(tx.to_currency, 0) + tx.to_amount
         else:
             balances[tx.from_currency] = balances.get(tx.from_currency, 0) + tx.from_amount
@@ -249,50 +1399,228 @@ def filesizeformat(value):
 app.jinja_env.filters['filesizeformat'] = filesizeformat
 
 # === ROUTES ===
+@app.route('/edit_exchange_name', methods=['POST'])
+@login_required
+def edit_exchange_name():
+    if not session.get('is_admin'):
+        flash('Admin access required!', 'danger')
+        return redirect(url_for('profile'))
+
+    global EXCHANGE_NAME
+    new_name = request.form['exchange_name'].strip()
+    if new_name:
+        EXCHANGE_NAME = new_name
+        flash(f'Exchange name updated to: {EXCHANGE_NAME}', 'success')
+    else:
+        flash('Name cannot be empty!', 'danger')
+    return redirect(url_for('profile'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # If already logged in → go to dashboard
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if not username or not password:
+            flash('Please fill in both fields.', 'danger')
+            return render_template('login.html')
+
         user = User.query.filter_by(username=username).first()
-        if user and user.password == password:
-            login_user(user)
+
+        if user and check_password_hash(user.password, password):
+            # === THIS IS THE KEY PART ===
+            login_user(user, remember=True)
+
+            # Populate session (optional but you were using it)
+            session['user_id'] = user.id
             session['is_admin'] = user.is_admin
-            flash('Login successful!')
-            return redirect(url_for('index'))
-        flash('Invalid credentials!')
+            session['tenant_id'] = user.tenant_id
+
+            # First-time password change
+            if getattr(user, 'requires_password_change', False):
+                flash('Please change your password.', 'warning')
+                return redirect(url_for('change_password', first_time=1))
+
+            flash('Login successful!', 'success')
+
+            # === PROPER REDIRECT WITH next SUPPORT ===
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('dashboard')  # ← FIXED
+            return redirect(next_page)
+
+        else:
+            flash('Invalid username or password.', 'danger')
+
     return render_template('login.html')
 
 @app.route('/logout')
+@login_required
 def logout():
     logout_user()
-    session.clear()
-    flash('Logged out!')
+    session.pop('tenant_id', None)
+    session.pop('selected_client_id', None)
+    flash('Logged out!', 'success')
     return redirect(url_for('login'))
 
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/create_tenant', methods=['POST'])
 @login_required
-def index():
+def create_tenant():
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('profile'))
+
+    name = request.form['exchange_name'].strip()
+    client_name = request.form['client_name'].strip()
+    email = request.form['client_email'].strip().lower()
+    phone = request.form['client_phone'].strip()
+    package = int(request.form['package'])
+
+    if package not in [1, 5]:
+        flash('Invalid package!', 'danger')
+        return redirect(url_for('profile'))
+
+    if not all([name, client_name, email]):
+        flash('All fields required!', 'danger')
+        return redirect(url_for('profile'))
+
+    if Tenant.query.filter_by(name=name).first():
+        flash('Name taken!', 'danger')
+        return redirect(url_for('profile'))
+    if Tenant.query.filter_by(client_email=email).first():
+        flash('Email registered!', 'danger')
+        return redirect(url_for('profile'))
+
+    # === 1. Create Tenant in tenant_1.db (admin DB) ===
+    temp_password = secrets.token_urlsafe(10)
+    tenant = Tenant(
+        name=name,
+        client_name=client_name,
+        client_email=email,
+        client_phone=phone,
+        is_active=True,
+        max_users=package
+    )
+    db.session.add(tenant)
+    db.session.flush()  # Get tenant.id
+
+    admin_username = email.split('@')[0][:20]  # ← SAVE BEFORE COMMIT!
+    admin_user = User(
+        username=admin_username,
+        password=generate_password_hash(temp_password),
+        is_admin=True,
+        is_super_admin=False,
+        tenant_id=tenant.id,
+        requires_password_change=True
+    )
+    db.session.add(admin_user)
+    db.session.commit()  # ← Now safe to commit
+
+    # === 2. CREATE NEW DB FILE: tenant_{id}.db ===
+    # === 2. CREATE NEW DB FILE: tenant_{id}.db ===
+    new_db_path = os.path.join(app.instance_path, f"tenant_{tenant.id}.db")
+    abs_db_path = os.path.abspath(new_db_path)
+    new_uri = f"sqlite:///{abs_db_path}"
+
+    print(f"CREATING NEW DB: {abs_db_path}")
+
+    # Save old config
+    old_uri = app.config['SQLALCHEMY_DATABASE_URI']
+
+    # Switch to new DB
+    app.config['SQLALCHEMY_DATABASE_URI'] = new_uri
+    db.session.remove()
+    db.engine.dispose()
+    new_engine = db.create_engine(new_uri, pool_pre_ping=True)
+    db.session.bind = new_engine
+
+    # Create tables
+    db.create_all()
+
+    # FORCE FILE CREATION
+    from sqlalchemy import text
+    with new_engine.connect() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS _init (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO _init DEFAULT VALUES"))
+        conn.commit()
+    print(f"DB FILE CREATED ON DISK: {abs_db_path}")
+
+    # Clean up
+    with new_engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS _init"))
+        conn.commit()
+
+    # Restore original DB
+    app.config['SQLALCHEMY_DATABASE_URI'] = old_uri
+    db.session.remove()
+    db.engine.dispose()
+    db.session.bind = db.create_engine(old_uri, pool_pre_ping=True)
+
+    print(f"NEW DB FULLY CREATED: {abs_db_path}")
+
+    # === 3. Send Email ===
+    # === 3. Send Email (FORCE SYNC) ===
+    try:
+        msg = Message(
+            subject=f"Your {name} Account",
+            recipients=[email],
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            body=f"""
+    Hello {client_name},
+
+    Exchange: {name}
+    Login: http://127.0.0.1:5000/login
+    Username: {admin_username}
+    Password: {temp_password}
+
+    Change password on first login.
+
+    ---
+    MoneyExchange Pro
+            """
+        )
+        with app.app_context():
+            mail.send(msg)
+        print(f"EMAIL SENT TO: {email}")
+        flash(f'Client created & email sent to {email}', 'success')
+    except Exception as e:
+        print(f"EMAIL FAILED: {e}")
+        flash(f'Client created, email failed: {str(e)}', 'warning')
+
+    return redirect(url_for('profile'))
+
+@app.route('/')
+def root():
+    if current_user.is_authenticated:
+        logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/dashboard', methods=['GET', 'POST'])
+@login_required
+def dashboard():
     global FEE_PERCENTAGE, FLAT_FEE_CAD
-    if 'user_id' not in session: return redirect(url_for('login'))
 
+    # === UPDATE FEES ===
     if request.method == 'POST' and 'update_fees' in request.form:
-        FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-        FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
-        flash(f'Fees updated: {FEE_PERCENTAGE*100}% + ${FLAT_FEE_CAD} CAD!')
-        return redirect(url_for('index'))
+        try:
+            FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
+            FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
+            flash(f'Fees updated: {FEE_PERCENTAGE*100:.1f}% + ${FLAT_FEE_CAD:.2f} CAD', 'success')
+        except ValueError:
+            flash('Invalid fee values!', 'danger')
+        return redirect(url_for('dashboard'))
 
+    # === REQUIRE CLIENT ===
     if request.method == 'POST' and not session.get('selected_client_id'):
-        flash('SELECT A CLIENT FIRST!')
+        flash('Select client first!', 'danger')
         return redirect(url_for('customers'))
 
+    # === CREATE TRANSACTION ===
     if request.method == 'POST':
         mode = request.form['mode']
         fixed_currency = request.form['fixed_currency']
@@ -302,128 +1630,214 @@ def index():
         is_fintrac = 'is_fintrac' in request.form
         status = request.form['status']
 
-        if fixed_currency == other_currency:
-            flash('Cannot exchange same currency!')
-            return redirect(url_for('index'))
-
+        # Get rates
         rate_to_cad = float(request.form.get('rate_to_cad') or 0)
-        if rate_to_cad <= 0:
-            flash('Rate is required!')
-            return redirect(url_for('index'))
+        rate_from_cad = float(request.form.get('rate_from_cad') or 0)
 
-        exchange_rate = rate_to_cad
-        tx_ref = generate_tx_ref()
+        if fixed_currency == other_currency:
+            flash('Same currency!', 'danger')
+            return redirect(url_for('dashboard'))
 
+        # Determine FROM / TO
         if mode == 'client_fixed':
             from_currency = fixed_currency
             to_currency = other_currency
             from_amount = fixed_amount
-            if from_currency == 'CAD':
-                remaining = fixed_amount - FLAT_FEE_CAD
-                if remaining <= 0: flash(f'Need > ${FLAT_FEE_CAD} CAD'); return redirect(url_for('index'))
-                to_amount = remaining / exchange_rate
-            elif to_currency == 'CAD':
-                gross = fixed_amount * exchange_rate
-                to_amount = gross - FLAT_FEE_CAD
-                if to_amount <= 0: flash('Amount too small after fee!'); return redirect(url_for('index'))
-            else:
-                gross = fixed_amount * rate_to_cad
-                gross -= FLAT_FEE_CAD
-                to_amount = gross / rate_to_cad
         else:
             from_currency = other_currency
             to_currency = fixed_currency
             to_amount = fixed_amount
-            if to_currency == 'CAD':
-                from_amount = (fixed_amount + FLAT_FEE_CAD) / exchange_rate
-            elif from_currency == 'CAD':
-                from_amount = fixed_amount * exchange_rate + FLAT_FEE_CAD
+
+        # === CASE 1: CAD involved ===
+        if from_currency == 'CAD' or to_currency == 'CAD':
+            if from_currency == 'CAD':
+                if rate_to_cad <= 0:
+                    flash('Rate required!', 'danger')
+                    return redirect(url_for('dashboard'))
+                remaining = from_amount - FLAT_FEE_CAD
+                if remaining <= 0:
+                    flash(f'Need > ${FLAT_FEE_CAD} CAD', 'danger')
+                    return redirect(url_for('dashboard'))
+                to_amount = remaining / rate_to_cad
+                exchange_rate = to_amount / from_amount
+                rate_from_cad = 1.0
+            else:  # to_currency == 'CAD'
+                # When to_currency is CAD, rate_to_cad from form is the rate from from_currency to CAD
+                # The form always sends rate_to_cad for the non-CAD currency to CAD rate
+                if rate_to_cad <= 0:
+                    flash('Rate required!', 'danger')
+                    return redirect(url_for('dashboard'))
+                # Use rate_to_cad (form field) as the rate from from_currency to CAD
+                rate_from_cad = rate_to_cad  # Store: from_currency -> CAD rate
+                gross_cad = from_amount * rate_to_cad
+                to_amount = gross_cad - FLAT_FEE_CAD
+                if to_amount <= 0:
+                    flash('Amount too small after fee!', 'danger')
+                    return redirect(url_for('dashboard'))
+                exchange_rate = to_amount / from_amount
+                rate_to_cad = 1.0  # CAD to CAD is 1.0
+
+        # === CASE 2: NO CAD (e.g. USD to EUR) ===
+        else:
+            if rate_from_cad <= 0 or rate_to_cad <= 0:
+                flash('Both rates required for non-CAD pairs!', 'danger')
+                return redirect(url_for('dashboard'))
+
+            if mode == 'client_fixed':
+                # Client sells USD to gets EUR
+                gross_cad = from_amount * rate_to_cad  # USD to CAD
+                net_cad = gross_cad - FLAT_FEE_CAD
+                if net_cad <= 0:
+                    flash('Amount too small after fee!', 'danger')
+                    return redirect(url_for('dashboard'))
+                to_amount = net_cad / rate_from_cad  # CAD to EUR
             else:
-                gross = fixed_amount * rate_to_cad
-                gross -= FLAT_FEE_CAD
-                to_amount = gross / rate_to_cad
+                # Client wants EUR to pays USD
+                gross_cad = to_amount * rate_from_cad  # EUR to CAD
+                total_cad = gross_cad + FLAT_FEE_CAD
+                from_amount = total_cad / rate_to_cad  # CAD to USD
 
-        # Calculate profit in CAD
-        profit_cad = FLAT_FEE_CAD
-        profit_cad += from_amount * FEE_PERCENTAGE
-        profit_cad = round(profit_cad, 2)
-        total_fee = profit_cad
+            exchange_rate = to_amount / from_amount
 
+        # === PROFIT ===
+        profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
+        total_fee = round(profit_cad, 2)
+
+        # === GET PAYMENT METHODS ===
+        payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
+        payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
+        payment_note = request.form.get('payment_note', '').strip() or None
+        source_of_funds = request.form.get('source_of_funds', '').strip() or None
+        transaction_reason = request.form.get('transaction_reason', '').strip() or None
+
+        # === VALIDATION FOR TRANSACTIONS OVER 3000 CAD ===
+        # Calculate transaction value in CAD
+        transaction_cad_value = 0
+
+        if from_currency == 'CAD':
+            transaction_cad_value = from_amount
+        elif to_currency == 'CAD':
+            transaction_cad_value = to_amount  # Final CAD amount after fees
+        else:
+            # For non-CAD pairs, convert the larger amount to CAD
+            transaction_cad_value = max(from_amount * rate_from_cad, to_amount * rate_to_cad)
+
+        # Require fields for transactions OVER 3000 CAD
+        if transaction_cad_value > 3000:
+            print(f"DEBUG: Validating small transaction (${transaction_cad_value:.2f})")
+            print(f"DEBUG: Raw source_of_funds: {repr(request.form.get('source_of_funds'))}")
+            print(f"DEBUG: Raw transaction_reason: {repr(request.form.get('transaction_reason'))}")
+
+            source_empty = not source_of_funds or source_of_funds.strip() == ''
+            reason_empty = not transaction_reason or transaction_reason.strip() == ''
+
+            print(f"DEBUG: Processed source_of_funds: {repr(source_of_funds)} (empty: {source_empty})")
+            print(f"DEBUG: Processed transaction_reason: {repr(transaction_reason)} (empty: {reason_empty})")
+
+            if source_empty or reason_empty:
+                print("DEBUG: BLOCKING - fields are empty")
+                flash(f'REQUIRED: For transactions over $3000 CAD (this transaction: ${transaction_cad_value:.2f}), Source of Funds and Reason of Transaction are required.', 'danger')
+                return redirect(url_for('dashboard'))
+            else:
+                print("DEBUG: ALLOWING - fields are filled")
+
+        # === SAVE TO DB ===
+        tx_ref = generate_tx_ref()
         new_tx = Transaction(
             tx_ref=tx_ref,
             from_currency=from_currency,
             to_currency=to_currency,
-            from_amount=from_amount,
-            to_amount=to_amount,
-            exchange_rate=exchange_rate,
-            notes = f"{notes} (Profit: ${profit_cad} CAD)" if notes else f"Profit: ${profit_cad} CAD",
+            from_amount=round(from_amount, 6),
+            to_amount=round(to_amount, 6),
+            exchange_rate=round(exchange_rate, 6),
+            rate_from_cad=round(rate_from_cad, 6),   # ← SAVED
+            rate_to_cad=round(rate_to_cad, 6),       # ← SAVED
+            notes=f"{notes} (Profit: ${total_fee} CAD)" if notes else f"Profit: ${total_fee} CAD",
+            payment_method_from=payment_method_from,
+            payment_method_to=payment_method_to,
+            payment_note=payment_note,
+            source_of_funds=source_of_funds,
+            transaction_reason=transaction_reason,
             is_fintrac=is_fintrac or (max(from_amount, to_amount) >= 10000),
             client_id=session['selected_client_id'],
+            client_id_2=session.get('selected_client_id_2'),
             status=status,
-            total_fee_cad = total_fee,  # ← SAVE IT
-            user_id = current_user.id  # ← AUTO-SAVE WHO DID IT
+            total_fee_cad=total_fee,
+            user_id=current_user.id,
+            tenant_id=session.get('tenant_id')
         )
         db.session.add(new_tx)
         db.session.commit()
-        flash(f'Transaction {tx_ref} created!')
-        return redirect(url_for('index'))
 
+        flash(f'Tx {tx_ref} created!', 'success')
+        return redirect(url_for('dashboard'))
+
+    # === LOAD DATA FOR RENDER ===
     client = Client.query.get(session.get('selected_client_id')) if session.get('selected_client_id') else None
+    client2 = Client.query.get(session.get('selected_client_id_2')) if session.get('selected_client_id_2') else None
     total_volume_usd = 0
     led_color = '#00FF00'
+
     if client:
         six_months_ago = datetime.utcnow() - timedelta(days=180)
         for tx in client.transactions:
             if tx.date >= six_months_ago:
-                if tx.from_currency == 'USD': total_volume_usd += tx.from_amount
-                elif tx.to_currency == 'USD': total_volume_usd += tx.to_amount
-                else: total_volume_usd += convert_to_usd(tx.from_amount, tx.from_currency)
+                total_volume_usd += convert_to_usd(tx.from_amount, tx.from_currency)
         led_color = interpolate_color(total_volume_usd)
         total_volume_usd = round(total_volume_usd, 2)
 
-    balances = get_balances()
-    open_transactions = Transaction.query.filter_by(status='pending').all()
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
+    open_transactions = Transaction.query.filter_by(
+        status='pending',
+        tenant_id=session.get('tenant_id')
+    ).all()
 
-    return render_template('index.html',
-                           client=client, balances=balances, open_transactions=open_transactions,
-                           current_fee=current_fee, current_flat_fee=current_flat_fee,
-                           total_volume_usd=total_volume_usd, led_color=led_color,
-                           fee_percentage=current_fee, flat_fee_cad=current_flat_fee)
+    return render_template(
+        'index.html',
+        client=client,
+        client2=client2,
+        open_transactions=open_transactions,
+        total_volume_usd=total_volume_usd,
+        led_color=led_color,
+        fee_percentage=round(FEE_PERCENTAGE * 100, 1),
+        flat_fee_cad=round(FLAT_FEE_CAD, 2),
+        current_flat_fee=round(FLAT_FEE_CAD, 2),
+    )
 
 @app.route('/profile')
+@login_required
 def profile():
-    if 'user_id' not in session:
+    tenant = Tenant.query.get(session.get('tenant_id'))
+    if not tenant:
+        flash('Invalid tenant!', 'danger')
         return redirect(url_for('login'))
 
-    current_user = User.query.get(session['user_id'])
-    total_transactions = Transaction.query.count()
-    total_clients = Client.query.count()
-    total_users = User.query.count()
-
-    # Admin sees all users
-    users = User.query.all() if current_user.is_admin else []
-
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
+    total_transactions = Transaction.query.filter_by(tenant_id=tenant.id).count()
+    total_clients = Client.query.filter_by(tenant_id=tenant.id).count()
+    total_users = User.query.filter_by(tenant_id=tenant.id).count()
+    users = User.query.filter_by(tenant_id=tenant.id).all()
 
     return render_template('profile.html',
                            user=current_user,
+                           tenant=tenant,
                            total_transactions=total_transactions,
                            total_clients=total_clients,
                            total_users=total_users,
                            users=users,
                            exchange_name=EXCHANGE_NAME,
-                           max_users=MAX_USERS,
-                           current_fee=current_fee,
-                           current_flat_fee=current_flat_fee)
+                           max_users=tenant.max_users,
+                           current_fee=round(FEE_PERCENTAGE * 100, 1),
+                           current_flat_fee=round(FLAT_FEE_CAD, 2),
+                           is_super_admin=current_user.is_super_admin)
 
 @app.route('/manage_users', methods=['GET', 'POST'])
+@login_required
 def manage_users():
-    if 'user_id' not in session or not session.get('is_admin'):
-        flash('Admin access only!')
+    tenant = Tenant.query.get(session.get('tenant_id'))
+    if not (current_user.is_admin or current_user.is_super_admin):
+        flash('Admin only!', 'danger')
         return redirect(url_for('profile'))
+
+    current_count = User.query.filter_by(tenant_id=tenant.id).count()
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -431,72 +1845,233 @@ def manage_users():
         password = request.form.get('password')
 
         if action == 'add':
-            if User.query.filter_by(username=username).first():
-                flash(f'User {username} already exists!')
-            elif User.query.count() >= MAX_USERS:
-                flash(f'Cannot add more than {MAX_USERS} users!')
+            if User.query.filter_by(username=username, tenant_id=tenant.id).first():
+                flash(f'User {username} exists!', 'danger')
+            elif current_count >= tenant.max_users:
+                flash(f'Limit: {current_count}/{tenant.max_users}', 'danger')
             else:
-                new_user = User(username=username, password=password, is_admin=False)
+                new_user = User(
+                    username=username,
+                    password=generate_password_hash(password),
+                    is_admin=False,
+                    tenant_id=tenant.id,
+                    requires_password_change=True
+                )
                 db.session.add(new_user)
                 db.session.commit()
-                flash(f'User {username} added!')
+                flash(f'User {username} added!', 'success')
+
         elif action == 'delete':
-            user = User.query.filter_by(username=username).first()
-            if user and not user.is_admin:
-                db.session.delete(user)
+            user_id = request.form.get('user_id')
+            user_to_delete = User.query.filter_by(id=user_id, tenant_id=tenant.id).first()
+            if user_to_delete and not user_to_delete.is_admin and not user_to_delete.is_super_admin:
+                db.session.delete(user_to_delete)
                 db.session.commit()
-                flash(f'User {username} deleted!')
+                flash(f'User {user_to_delete.username} deleted!', 'success')
             else:
-                flash('Cannot delete admin or user not found!')
+                flash('Cannot delete!', 'danger')
 
-    users = User.query.all()
-    return render_template('manage_users.html', users=users, max_users=MAX_USERS, exchange_name=EXCHANGE_NAME)
+    current_count = User.query.filter_by(tenant_id=tenant.id).count()
+    users = User.query.filter_by(tenant_id=tenant.id).order_by(User.created_at.desc()).all()
 
-@app.route('/edit_exchange_name', methods=['POST'])
-def edit_exchange_name():
-    if 'user_id' not in session or not session.get('is_admin'):
-        return redirect(url_for('login'))
+    return render_template('manage_users.html',
+                           users=users,
+                           current_count=current_count,
+                           max_users=tenant.max_users,
+                           tenant=tenant,
+                           exchange_name=EXCHANGE_NAME)
 
-    global EXCHANGE_NAME
-    new_name = request.form['exchange_name'].strip()
-    if new_name:
-        EXCHANGE_NAME = new_name
-        flash(f'Exchange name updated to: {EXCHANGE_NAME}')
-    else:
-        flash('Name cannot be empty!')
-    return redirect(url_for('profile'))
+@app.route('/reset_user_password/<int:user_id>', methods=['POST'])
+@login_required
+def reset_user_password(user_id):
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('manage_users'))
+
+    user = User.query.get_or_404(user_id)
+    if user.is_super_admin:
+        flash('Cannot reset super admin!', 'danger')
+        return redirect(url_for('manage_users'))
+
+    temp_password = secrets.token_urlsafe(8)
+    user.password = generate_password_hash(temp_password)
+    user.requires_password_change = True
+    db.session.commit()
+
+    flash(f'Password reset. Temp: {temp_password}', 'info')
+    return redirect(url_for('manage_users'))
+
+@app.route('/manage_tenants')
+@login_required
+def manage_tenants():
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('profile'))
+
+    tenants = Tenant.query.order_by(Tenant.created_at.desc()).all()
+    return render_template('manage_tenants.html', tenants=tenants)
+
+@app.route('/switch_tenant', methods=['POST'])
+@login_required
+def switch_tenant():
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('dashboard'))
+
+    tenant_id = request.form.get('tenant_id')
+    tenant = Tenant.query.get(int(tenant_id))
+    if not tenant:
+        flash('Tenant not found!', 'danger')
+        return redirect(url_for('manage_tenants'))
+
+    session['tenant_id'] = tenant.id
+    session.pop('selected_client_id', None)
+    flash(f'Switched to {tenant.name}', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/toggle_tenant/<int:tenant_id>', methods=['POST'])
+@login_required
+def toggle_tenant(tenant_id):
+    if not current_user.is_super_admin:
+        flash('Super admin only!', 'danger')
+        return redirect(url_for('profile'))
+
+    tenant = Tenant.query.get_or_404(tenant_id)
+    tenant.is_active = not tenant.is_active
+    status = 'activated' if tenant.is_active else 'disabled'
+    db.session.commit()
+    flash(f'Client {tenant.name} {status}', 'success' if tenant.is_active else 'warning')
+    return redirect(url_for('manage_tenants'))
 
 @app.route('/customers')
+@login_required
 def customers():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    return render_template('customers.html', clients_data=calculate_clients_data(), now=datetime.utcnow().date())
+    query = Client.query.filter_by(tenant_id=session['tenant_id'])
+
+    # === SEARCH: Name or Phone (SQLite SAFE) ===
+    if request.args.get('search'):
+        term = request.args.get('search').strip().lower()
+        query = query.filter(
+            db.or_(
+                # Full name search: first + last
+                (Client.first_name + ' ' + Client.last_name).ilike(f"%{term}%"),
+                # Individual fields
+                Client.first_name.ilike(f"%{term}%"),
+                Client.last_name.ilike(f"%{term}%"),
+                Client.phone.ilike(f"%{term}%")
+            )
+        )
+
+    # === RISK LEVEL ===
+    if request.args.get('risk_level'):
+        query = query.filter(Client.risk_level == request.args.get('risk_level'))
+
+    # === BR STATUS ===
+    if request.args.get('br_status'):
+        query = query.filter(Client.br_status == request.args.get('br_status'))
+
+    # === ORDER & EXECUTE ===
+    clients = query.order_by(Client.id.desc()).all()
+
+    # === ENRICH DATA ===
+    clients_data = []
+    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    for c in clients:
+        txs = [t for t in c.transactions if t.date >= six_months_ago]
+        volume_usd = sum(convert_to_usd(t.from_amount, t.from_currency) for t in txs)
+        led_color = interpolate_color(volume_usd)
+        clients_data.append({
+            'client': c,
+            'transactions_list': c.transactions,
+            'total_volume_usd': volume_usd,
+            'led_color': led_color
+        })
+
+    return render_template('customers.html', clients_data=clients_data)
 
 @app.route('/select_customer/<int:client_id>')
+@login_required
 def select_customer(client_id):
-    session['selected_client_id'] = client_id
-    client = Client.query.get(client_id)
-    session['selected_client_name'] = f"{client.first_name} {client.last_name}"
-    flash('Client selected!')
-    return redirect(url_for('index'))
+    client = Client.query.filter_by(id=client_id, tenant_id=session.get('tenant_id')).first()
+    if not client:
+        flash('Client not found!', 'danger')
+        return redirect(url_for('customers'))
+
+    # Check what action we're performing
+    is_changing_primary = session.pop('changing_primary', False)
+    is_changing_secondary = session.pop('changing_secondary', False)
+
+    if is_changing_primary:
+        # Replace the primary customer
+        session['selected_client_id'] = client.id
+        session['selected_client_name'] = f"{client.first_name} {client.last_name}"
+        flash('Primary client changed!', 'success')
+    elif is_changing_secondary:
+        # Replace the secondary customer (but not if it's the same as primary)
+        if session.get('selected_client_id') != client.id:
+            session['selected_client_id_2'] = client.id
+            session['selected_client_name_2'] = f"{client.first_name} {client.last_name}"
+            flash('Secondary client changed!', 'success')
+        else:
+            flash('Cannot select the same client as primary!', 'warning')
+    elif not session.get('selected_client_id'):
+        # No primary client selected, make this the primary client
+        session['selected_client_id'] = client.id
+        session['selected_client_name'] = f"{client.first_name} {client.last_name}"
+        flash('Primary client selected!', 'success')
+    # If primary client exists and we're not changing it, make this the second client (if not the same as primary)
+    elif session.get('selected_client_id') != client.id:
+        session['selected_client_id_2'] = client.id
+        session['selected_client_name_2'] = f"{client.first_name} {client.last_name}"
+        flash('Second client selected!', 'success')
+    else:
+        flash('Cannot select the same client twice!', 'warning')
+
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/clear_second_client')
+@login_required
+def clear_second_client():
+    session.pop('selected_client_id_2', None)
+    session.pop('selected_client_name_2', None)
+    flash('Second client removed!', 'info')
+    return redirect(url_for('dashboard'))
+
+@app.route('/change_primary_client')
+@login_required
+def change_primary_client():
+    session['changing_primary'] = True
+    return redirect(url_for('customers'))
+
+@app.route('/change_secondary_client')
+@login_required
+def change_secondary_client():
+    session['changing_secondary'] = True
+    return redirect(url_for('customers'))
 
 @app.route('/edit_client/<client_id>', methods=['GET', 'POST'])
+@login_required
 def edit_client(client_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    client = None if client_id == 'new' else Client.query.get_or_404(int(client_id))
+    client = None if client_id == 'new' else Client.query.filter_by(id=int(client_id), tenant_id=session.get('tenant_id')).first_or_404()
+
     if request.method == 'POST':
-        if not client: client = Client()
+        if not client: client = Client(tenant_id=session.get('tenant_id'))
         client.first_name = request.form['first_name']
         client.last_name = request.form['last_name']
-        client.email = request.form['email']
+        client.email = request.form.get('email', '').strip() or None
         client.phone = request.form['phone']
-        client.civic_number = request.form['civic_number']
+        client.civic_number = request.form.get('civic_number', '').strip() or None
         client.street = request.form['street']
         client.city = request.form['city']
         client.province = request.form['province']
-        client.postal_code = request.form['postal_code']
+        client.postal_code = request.form.get('postal_code', '').strip() or None
+        client.country = request.form['country']
+        client.job = request.form.get('job', '').strip() or None
         client.apartment = request.form.get('apartment', '')
         client.risk_level = request.form.get('risk_level', 'low risk')
         client.notes = request.form.get('notes', '')
+        client.telegram_id = request.form.get('telegram_id', '').strip() or None
 
         for i in range(1, 4):
             prefix = f'id{i}_'
@@ -519,47 +2094,141 @@ def edit_client(client_id):
     return render_template('edit_client.html', client=client)
 
 @app.route('/download_id/<int:client_id>/<int:id_num>')
+@login_required
 def download_id_file(client_id, id_num):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    client = Client.query.get_or_404(client_id)
+    client = Client.query.filter_by(id=client_id, tenant_id=session.get('tenant_id')).first_or_404()
     filename = getattr(client, f'id{id_num}_filename')
-    if not filename: flash('File not found!'); return redirect(url_for('edit_client', client_id=client_id))
+    if not filename:
+        flash('File not found!')
+        return redirect(url_for('edit_client', client_id=client_id))
     setattr(client, f'id{id_num}_last_download', datetime.utcnow())
     db.session.commit()
     return send_from_directory(app.config['ID_UPLOAD_FOLDER'], filename, as_attachment=True)
 
-@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])  # ← ADD <int:>
+@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
+@login_required
 def edit_transaction(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
+
     if request.method == 'POST':
-        tx.from_amount = float(request.form['from_amount'])
-        tx.to_amount = tx.from_amount * float(request.form['exchange_rate'])
-        tx.exchange_rate = float(request.form['exchange_rate'])
-        tx.notes = request.form.get('notes')
-        tx.is_fintrac = request.form.get('is_fintrac', False) == 'on'
-        db.session.commit()
-        flash(f'Transaction #{tx.tx_ref} updated!')
+        try:
+            from_amount = float(request.form['from_amount'])
+            rate_from_cad = float(request.form['rate_from_cad'])
+            rate_to_cad = float(request.form['rate_to_cad'])
+            status = request.form['status']
+            notes = request.form.get('notes', '')
+            is_fintrac = 'is_fintrac' in request.form
+
+            # === RECALCULATE TO_AMOUNT USING EXACT RATES ===
+            if tx.from_currency == 'CAD':
+                remaining = from_amount - FLAT_FEE_CAD
+                to_amount = remaining / rate_to_cad if remaining > 0 else 0
+            elif tx.to_currency == 'CAD':
+                gross_cad = from_amount * rate_from_cad
+                to_amount = gross_cad - FLAT_FEE_CAD
+            else:
+                gross_cad = from_amount * rate_from_cad
+                net_cad = gross_cad - FLAT_FEE_CAD
+                to_amount = net_cad / rate_to_cad if net_cad > 0 else 0
+
+            exchange_rate = to_amount / from_amount if from_amount > 0 else 0
+            profit_cad = FLAT_FEE_CAD + (from_amount * FEE_PERCENTAGE)
+
+            # === VALIDATION FOR TRANSACTIONS OVER 3000 CAD ===
+            # Calculate transaction value in CAD
+            transaction_cad_value = 0
+
+            if tx.from_currency == 'CAD':
+                transaction_cad_value = from_amount
+            elif tx.to_currency == 'CAD':
+                transaction_cad_value = to_amount  # Final CAD amount after fees
+            else:
+                # For non-CAD pairs, convert the larger amount to CAD
+                transaction_cad_value = max(from_amount * rate_from_cad, to_amount * rate_to_cad)
+
+            print(f"EDIT VALIDATION: Transaction CAD value: {transaction_cad_value}")
+
+            # Require fields for transactions OVER 3000 CAD
+            if transaction_cad_value > 3000:
+                source_of_funds = request.form.get('source_of_funds', '').strip() or None
+                transaction_reason = request.form.get('transaction_reason', '').strip() or None
+
+                source_empty = not source_of_funds or source_of_funds.strip() == ''
+                reason_empty = not transaction_reason or transaction_reason.strip() == ''
+
+                if source_empty or reason_empty:
+                    print("EDIT VALIDATION: BLOCKING EDIT - required fields missing for large transaction")
+                    flash(f'❌ REQUIRED: For transactions over $3000 CAD, Source of Funds and Reason of Transaction are required.', 'danger')
+                    return redirect(url_for('edit_transaction', tx_id=tx_id))
+                else:
+                    print("EDIT VALIDATION: Large transaction edit validated")
+            else:
+                print(f"EDIT VALIDATION: Small transaction (${transaction_cad_value}), no validation required")
+
+            # === UPDATE DB WITH EXACT VALUES ===
+            tx.from_amount = round(from_amount, 6)
+            tx.to_amount = round(to_amount, 6)
+            tx.exchange_rate = round(exchange_rate, 6)
+            tx.rate_from_cad = round(rate_from_cad, 6)   # ← SAVE
+            tx.rate_to_cad = round(rate_to_cad, 6)       # ← SAVE
+            tx.status = status
+            tx.notes = notes
+            tx.payment_method_from = request.form.get('payment_method_from', 'Cash') or 'Cash'
+            tx.payment_method_to = request.form.get('payment_method_to', 'Cash') or 'Cash'
+            tx.payment_note = request.form.get('payment_note', '').strip() or None
+            tx.source_of_funds = request.form.get('source_of_funds', '').strip() or None
+            tx.transaction_reason = request.form.get('transaction_reason', '').strip() or None
+            tx.is_fintrac = is_fintrac or (max(from_amount, to_amount) >= 10000)
+            tx.total_fee_cad = round(profit_cad, 2)
+
+            # === UPLOAD RECEIPT ===
+            if 'receipt_file' in request.files:
+                file = request.files['receipt_file']
+                if file and file.filename.lower().endswith('.pdf'):
+                    filename = secure_filename(f"receipt_{tx.tx_ref}.pdf")
+                    filepath = os.path.join(app.config['RECEIPT_FOLDER'], filename)
+                    file.save(filepath)
+                    tx.receipt_filename = filename
+
+            db.session.commit()
+            flash(f'Tx #{tx.tx_ref} updated!', 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error: {str(e)}', 'danger')
+
         return redirect(url_for('transactions'))
-    return render_template('edit_transaction.html', tx=tx)
+
+    # === GET: USE SAVED RATES (NO RECALCULATION) ===
+    return render_template(
+        'edit_transaction.html',
+        tx=tx,
+        client=tx.client,
+        flat_fee_cad=FLAT_FEE_CAD,
+        fee_percentage=FEE_PERCENTAGE,
+        profit_cad=tx.total_fee_cad or 0,
+        rate_from_cad=tx.rate_from_cad,   # ← FROM DB
+        rate_to_cad=tx.rate_to_cad        # ← FROM DB
+    )
 
 @app.route('/transactions')
 @login_required
 def transactions():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    page = int(request.args.get('page', 1)); per_page = 10
-    from_date = request.args.get('from_date', ''); to_date = request.args.get('to_date', '')
-    search_client = request.args.get('client_name', ''); search_from = request.args.get('from_currency', '').upper()
-    search_to = request.args.get('to_currency', '').upper(); fintrac = request.args.get('fintrac', '')
+    page = int(request.args.get('page', 1))
+    per_page = 10
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
+    search_client = request.args.get('client_name', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
     status = request.args.get('status', '')
 
-    query = Transaction.query.order_by(Transaction.date.desc())
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
     if not session.get('is_admin'):
         client_id = session.get('selected_client_id')
         if not client_id:
-            return render_template('transactions.html', transactions=[], total_count=0, total_pages=0, page=1,
-                                   from_date=from_date, to_date=to_date, search_client=search_client,
-                                   search_from=search_from, search_to=search_to, fintrac=fintrac, status=status,
-                                   current_fee=round(FEE_PERCENTAGE*100, 1), current_flat_fee=round(FLAT_FEE_CAD, 2))
+            return render_template('transactions.html', transactions=[], total_count=0, total_pages=0, page=1)
         query = query.filter(Transaction.client_id == client_id)
 
     if from_date:
@@ -571,8 +2240,20 @@ def transactions():
 
     if search_client:
         name = f"%{search_client}%"
-        query = query.join(Client).filter(or_(Client.first_name.ilike(name), Client.last_name.ilike(name),
-                                             func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
     if search_from: query = query.filter(Transaction.from_currency == search_from)
     if search_to: query = query.filter(Transaction.to_currency == search_to)
     if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
@@ -590,34 +2271,33 @@ def transactions():
                            current_fee=round(FEE_PERCENTAGE*100, 1), current_flat_fee=round(FLAT_FEE_CAD, 2))
 
 @app.route('/update_status/<int:tx_id>', methods=['POST'])
+@login_required
 def update_status(tx_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     tx.status = request.form['status']
     db.session.commit()
-    flash(f'Transaction #{tx.tx_ref} status: {tx.status.upper()}')
+    flash(f'Tx #{tx.tx_ref} → {tx.status.upper()}')
     return redirect(url_for('transactions'))
 
 @app.route('/delete/<int:tx_id>')
+@login_required
 def delete_transaction(tx_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     if not session.get('is_admin'):
-        flash('Access denied!')
+        flash('Admin only!')
         return redirect(url_for('transactions'))
-    tx_ref = tx.tx_ref  # Save before delete
+    tx_ref = tx.tx_ref
     db.session.delete(tx)
     db.session.commit()
-    flash(f'Transaction {tx_ref} deleted!')
+    flash(f'Tx {tx_ref} deleted!')
     return redirect(url_for('transactions'))
 
 @app.route('/charts')
+@login_required
 def charts():
-    if 'user_id' not in session: return redirect(url_for('login'))
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     client_id = session.get('selected_client_id')
-    query = Transaction.query.filter(Transaction.date >= thirty_days_ago)
+    query = Transaction.query.filter(Transaction.date >= thirty_days_ago, Transaction.tenant_id==session.get('tenant_id'))
     if client_id: query = query.filter_by(client_id=client_id)
     transactions = query.order_by(Transaction.date).all()
 
@@ -626,8 +2306,11 @@ def charts():
         date_str = tx.date.strftime('%Y-%m-%d')
         if date_str not in daily_balances:
             daily_balances[date_str] = {'USD': 0, 'EUR': 0, 'GBP': 0, 'IRR': 0, 'CAD': 0}
-        daily_balances[date_str][tx.from_currency] += tx.from_amount
-        daily_balances[date_str][tx.to_currency] -= tx.to_amount
+        if tx.is_deposit:
+            daily_balances[date_str][tx.to_currency] += tx.to_amount
+        else:
+            daily_balances[date_str][tx.from_currency] += tx.from_amount
+            daily_balances[date_str][tx.to_currency] -= tx.to_amount
 
     dates = sorted(daily_balances.keys())
     usd_data = [daily_balances[d].get('USD', 0) for d in dates]
@@ -652,78 +2335,521 @@ def get_live_rate(from_curr, to_curr):
     except: return "0.85"
 
 @app.route('/export')
+@login_required
 def export_csv():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    query = Transaction.query.order_by(Transaction.date.desc())
-    all_tx = query.all() if session.get('is_admin') else \
-             query.filter_by(client_id=session.get('selected_client_id')).all() if session.get('selected_client_id') else []
+    # Use the same filtering logic as the transactions list
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
+    search_client = request.args.get('client_name', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
+    status = request.args.get('status', '')
 
-    # Apply filters (same as before)
-    search_date = request.args.get('date', ''); search_client = request.args.get('client_name', '')
-    search_from = request.args.get('from_currency', ''); search_to = request.args.get('to_currency', '')
-    search_fintrac = request.args.get('fintrac', ''); search_status = request.args.get('status', '')
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
+    if not session.get('is_admin'):
+        client_id = session.get('selected_client_id')
+        if not client_id:
+            # Return empty CSV if no client selected
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
+            writer.writerow([])
+            writer.writerow(['No data available'])
+            return app.response_class(output.getvalue(), mimetype='text/csv',
+                                    headers={'Content-Disposition': 'attachment;filename=transactions.csv'})
+        query = query.filter(Transaction.client_id == client_id)
 
-    if search_fintrac == 'yes': all_tx = [tx for tx in all_tx if tx.is_fintrac]
-    elif search_fintrac == 'no': all_tx = [tx for tx in all_tx if not tx.is_fintrac]
-    if search_status == 'closed': all_tx = [tx for tx in all_tx if tx.status == 'closed']
-    elif search_status == 'pending': all_tx = [tx for tx in all_tx if tx.status == 'pending']
-    if search_date:
-        d = datetime.strptime(search_date, '%Y-%m-%d').date()
-        all_tx = [tx for tx in all_tx if tx.date.date() == d]
+    # Apply the same filters as the transactions list
+    if from_date:
+        try: query = query.filter(Transaction.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        except: pass
+    if to_date:
+        try: end_dt = datetime.combine(datetime.strptime(to_date, '%Y-%m-%d'), time.max)
+        except: pass
+        else: query = query.filter(Transaction.date <= end_dt)
+
     if search_client:
-        all_tx = [tx for tx in all_tx if search_client.lower() in f"{tx.client.first_name} {tx.client.last_name}".lower()]
-    if search_from: all_tx = [tx for tx in all_tx if tx.from_currency.upper() == search_from.upper()]
-    if search_to: all_tx = [tx for tx in all_tx if tx.to_currency.upper() == search_to.upper()]
+        name = f"%{search_client}%"
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
+    if search_from: query = query.filter(Transaction.from_currency == search_from)
+    if search_to: query = query.filter(Transaction.to_currency == search_to)
+    if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
+    elif fintrac == 'no': query = query.filter(Transaction.is_fintrac == False)
+    if status: query = query.filter(Transaction.status == status)
 
-    output = StringIO(); writer = csv.writer(output)
-    writer.writerow(['ID', 'Date', 'Client', 'From', 'From Amount', 'To', 'To Amount', 'Rate', 'Notes', 'Profit'])
+    # Get all matching transactions (not paginated)
+    all_tx = query.all()
+
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Enhanced CSV headers with all transaction information
+    headers = [
+        'Transaction ID', 'Date & Time', 'Client Name', 'Client Email', 'Client Phone',
+        'From Currency', 'From Amount', 'To Currency', 'To Amount', 'Exchange Rate',
+        'Rate From→CAD', 'Rate To→CAD', 'Payment Method From', 'Payment Method To',
+        'Payment Note', 'Source of Funds', 'Transaction Reason', 'FINTRAC Report',
+        'Status', 'Is Deposit', 'Deposit Type', 'Receipt Filename', 'Notes',
+        'Total Fee (CAD)', 'Profit/Loss'
+    ]
+    writer.writerow(headers)
+
     total_profit = 0
+    total_transactions = len(all_tx)
+
     for tx in all_tx:
-        profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        # Calculate profit/loss
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
         total_profit += profit
+
+        # Client information
+        client_name = f"{tx.client.first_name} {tx.client.last_name}" if tx.client else "Unknown"
+        client_email = tx.client.email if tx.client and tx.client.email else ""
+        client_phone = tx.client.phone if tx.client and tx.client.phone else ""
+
+        # Write comprehensive transaction data
         writer.writerow([
-            tx.tx_ref, tx.date.strftime('%Y-%m-%d %H:%M'),
-            f"{tx.client.first_name} {tx.client.last_name}",
-            tx.from_currency, f"{tx.from_amount:.2f}", tx.to_currency,
-            f"{tx.to_amount:.2f}", f"{tx.exchange_rate:.4f}", tx.notes or '',
-            f"${profit:.2f}"
+            tx.tx_ref,
+            tx.date.strftime('%Y-%m-%d %H:%M:%S'),
+            client_name,
+            client_email,
+            client_phone,
+            tx.from_currency,
+            f"{tx.from_amount:.6f}",
+            tx.to_currency,
+            f"{tx.to_amount:.6f}",
+            f"{tx.exchange_rate:.6f}",
+            f"{tx.rate_from_cad:.6f}",
+            f"{tx.rate_to_cad:.6f}",
+            tx.payment_method_from or '',
+            tx.payment_method_to or '',
+            tx.payment_note or '',
+            tx.source_of_funds or '',
+            tx.transaction_reason or '',
+            'YES' if tx.is_fintrac else 'NO',
+            tx.status or 'closed',
+            'YES' if tx.is_deposit else 'NO',
+            tx.deposit_type or '',
+            tx.receipt_filename or '',
+            tx.notes or '',
+            f"{tx.total_fee_cad:.2f}" if tx.total_fee_cad else "0.00",
+            f"{profit:.2f}"
         ])
-    writer.writerow([]); writer.writerow([f'TOTAL ROWS: {len(all_tx)} | TOTAL PROFIT: ${total_profit:.2f}'])
+
+    # Summary rows
+    writer.writerow([])  # Empty row
+    writer.writerow(['SUMMARY'])
+    writer.writerow(['Total Transactions', str(total_transactions)])
+    writer.writerow(['Total Profit/Loss (CAD)', f"${total_profit:.2f}"])
+    writer.writerow(['Export Date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+
+    # Filter summary if filters were applied
+    filter_info = []
+    if from_date: filter_info.append(f"From Date: {from_date}")
+    if to_date: filter_info.append(f"To Date: {to_date}")
+    if search_client: filter_info.append(f"Client: {search_client}")
+    if search_from: filter_info.append(f"From Currency: {search_from}")
+    if search_to: filter_info.append(f"To Currency: {search_to}")
+    if fintrac: filter_info.append(f"FINTRAC: {fintrac}")
+    if status: filter_info.append(f"Status: {status}")
+
+    if filter_info:
+        writer.writerow([])
+        writer.writerow(['Applied Filters'])
+        for filter_item in filter_info:
+            writer.writerow([filter_item])
+    # Generate descriptive filename
+    filename_parts = ['transactions']
+    if from_date or to_date:
+        date_part = f"{from_date or 'start'}_to_{to_date or 'end'}"
+        filename_parts.append(date_part)
+    if search_client:
+        filename_parts.append(f"client_{search_client.replace(' ', '_')}")
+    filename_parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+
+    filename = '_'.join(filename_parts) + '.csv'
+
     return app.response_class(output.getvalue(), mimetype='text/csv',
-                              headers={'Content-Disposition': f'attachment;filename=transactions.csv'})
+                              headers={'Content-Disposition': f'attachment;filename={filename}'})
+
+
+@app.route('/export_pdf')
+@login_required
+def export_pdf():
+    # Use the same filtering logic as the transactions list and CSV export
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
+    search_client = request.args.get('client_name', '')
+    search_from = request.args.get('from_currency', '').upper()
+    search_to = request.args.get('to_currency', '').upper()
+    fintrac = request.args.get('fintrac', '')
+    status = request.args.get('status', '')
+
+    query = Transaction.query.filter_by(tenant_id=session.get('tenant_id')).order_by(Transaction.date.desc())
+    if not session.get('is_admin'):
+        client_id = session.get('selected_client_id')
+        if not client_id:
+            # Return message if no client selected
+            html_content = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h2>No Data Available</h2>
+                <p>No client selected for PDF report generation.</p>
+            </body>
+            </html>
+            """
+            options = {
+                'orientation': 'Landscape',
+                'page-size': 'A4',
+                'margin-top': '0.25in',
+                'margin-right': '0.25in',
+                'margin-bottom': '0.25in',
+                'margin-left': '0.25in'
+            }
+            pdf_data = pdfkit.from_string(html_content, False, configuration=config_pdf, options=options)
+            return send_file(BytesIO(pdf_data), as_attachment=True,
+                           download_name='no_data_report.pdf', mimetype='application/pdf')
+        query = query.filter(Transaction.client_id == client_id)
+
+    # Apply the same filters as the transactions list
+    if from_date:
+        try: query = query.filter(Transaction.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        except: pass
+    if to_date:
+        try: end_dt = datetime.combine(datetime.strptime(to_date, '%Y-%m-%d'), time.max)
+        except: pass
+        else: query = query.filter(Transaction.date <= end_dt)
+
+    if search_client:
+        name = f"%{search_client}%"
+        # Search in both primary and secondary clients
+        primary_client_match = exists().where(
+            and_(Transaction.client_id == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        secondary_client_match = exists().where(
+            and_(Transaction.client_id_2 == Client.id,
+                 or_(Client.first_name.ilike(name),
+                     Client.last_name.ilike(name),
+                     func.concat(Client.first_name, ' ', Client.last_name).ilike(name)))
+        )
+        query = query.filter(or_(primary_client_match, secondary_client_match))
+    if search_from: query = query.filter(Transaction.from_currency == search_from)
+    if search_to: query = query.filter(Transaction.to_currency == search_to)
+    if fintrac == 'yes': query = query.filter(Transaction.is_fintrac == True)
+    elif fintrac == 'no': query = query.filter(Transaction.is_fintrac == False)
+    if status: query = query.filter(Transaction.status == status)
+
+    # Get all matching transactions
+    all_tx = query.all()
+
+    # Generate descriptive filename
+    filename_parts = ['transaction_report']
+    if from_date or to_date:
+        date_part = f"{from_date or 'start'}_to_{to_date or 'end'}"
+        filename_parts.append(date_part.replace('-', ''))
+    if search_client:
+        filename_parts.append(f"client_{search_client.replace(' ', '_')}")
+    filename_parts.append(datetime.now().strftime('%Y%m%d_%H%M%S'))
+    filename = '_'.join(filename_parts) + '.pdf'
+
+    # Calculate summary statistics
+    total_transactions = len(all_tx)
+    total_volume_from = sum(tx.from_amount for tx in all_tx)
+    total_volume_to = sum(tx.to_amount for tx in all_tx)
+    total_profit = 0
+
+    # Additional statistics for comprehensive reporting
+    fintrac_count = sum(1 for tx in all_tx if tx.is_fintrac)
+    deposit_count = sum(1 for tx in all_tx if tx.is_deposit)
+    exchange_count = total_transactions - deposit_count
+    unique_clients = len(set(tx.client_id for tx in all_tx if tx.client))
+
+    for tx in all_tx:
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = round((tx.from_amount * FEE_PERCENTAGE * 100) + FLAT_FEE_CAD, 2)
+        total_profit += profit
+
+    # Render PDF template
+    html_content = render_template('transaction_report.html',
+                                 transactions=all_tx,
+                                 total_transactions=total_transactions,
+                                 total_volume_from=total_volume_from,
+                                 total_volume_to=total_volume_to,
+                                 total_profit=total_profit,
+                                 fintrac_count=fintrac_count,
+                                 deposit_count=deposit_count,
+                                 exchange_count=exchange_count,
+                                 unique_clients=unique_clients,
+                                 from_date=from_date,
+                                 to_date=to_date,
+                                 search_client=search_client,
+                                 search_from=search_from,
+                                 search_to=search_to,
+                                 fintrac=fintrac,
+                                 status=status,
+                                 exchange_name=EXCHANGE_NAME,
+                                 current_fee=round(FEE_PERCENTAGE * 100, 1),
+                                 current_flat_fee=round(FLAT_FEE_CAD, 2),
+                                 report_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+    # PDF generation options for landscape orientation
+    options = {
+        'orientation': 'Landscape',
+        'page-size': 'A4',
+        'margin-top': '0.25in',
+        'margin-right': '0.25in',
+        'margin-bottom': '0.25in',
+        'margin-left': '0.25in',
+        'encoding': 'UTF-8',
+        'no-outline': None,
+        'enable-local-file-access': None
+    }
+
+    pdf_data = pdfkit.from_string(html_content, False, configuration=config_pdf, options=options)
+    return send_file(BytesIO(pdf_data), as_attachment=True,
+                   download_name=filename, mimetype='application/pdf')
+
 
 @app.route('/deposit', methods=['GET', 'POST'])
 @login_required
 def deposit():
-    if 'user_id' not in session or not session.get('selected_client_id'):
-        flash('SELECT A CLIENT FIRST!'); return redirect(url_for('index'))
-    client = Client.query.get(session['selected_client_id'])
+    client = Client.query.filter_by(id=session.get('selected_client_id'), tenant_id=session.get('tenant_id')).first()
+
     if request.method == 'POST':
-        currency = request.form['currency']; amount = float(request.form['amount'])
-        notes = request.form.get('notes', f'Deposit {amount} {currency}')
+        if not session.get('selected_client_id'):
+            flash('Select client first!')
+            return redirect(url_for('customers'))
+
+        currency = request.form['currency']
+        amount = float(request.form['amount'])
+        deposit_type = request.form.get('deposit_type', 'add_fund')
         tx_ref = generate_tx_ref()
+
+        # Handle different deposit types
+        total_fee_cad = 0.0
+        to_amount = 0
+        notes_prefix = ""
+
+        if deposit_type == 'add_fund':
+            # Add to available money only
+            to_amount = amount
+            notes_prefix = f"Add Fund: +${amount} {currency}"
+        elif deposit_type == 'withdraw_fund':
+            # Subtract from available money only
+            to_amount = -amount
+            notes_prefix = f"Withdraw Fund: -${amount} {currency}"
+        elif deposit_type == 'profit':
+            # Add to available money AND total profit
+            to_amount = amount
+            total_fee_cad = amount
+            notes_prefix = f"Exchange Profit: +${amount} {currency} (added to profit)"
+        elif deposit_type == 'cost':
+            # Subtract from available money AND total profit
+            to_amount = -amount
+            total_fee_cad = -amount
+            notes_prefix = f"Exchange Cost: -${amount} {currency} (subtracted from profit)"
+
+        notes = request.form.get('notes', notes_prefix)
+        if not notes or notes == f'Deposit {amount} {currency}':
+            notes = notes_prefix
+
         new_tx = Transaction(
-            tx_ref=tx_ref, from_currency=currency, to_currency=currency,
-            from_amount=0, to_amount=amount, exchange_rate=1.0, notes=notes,
-            is_fintrac=(amount >= 10000), client_id=session['selected_client_id'],
+            tx_ref=tx_ref,
+            from_currency=currency,
+            to_currency=currency,
+            from_amount=0,
+            to_amount=to_amount,
+            exchange_rate=1.0,
+            notes=notes,
+            is_fintrac=(abs(amount) >= 10000),
+            client_id=session['selected_client_id'],
             status=request.form.get('status', 'closed'),
             is_deposit=True,
-            total_fee_cad=0.0
-
+            deposit_type=deposit_type,
+            total_fee_cad=total_fee_cad,
+            tenant_id=session.get('tenant_id')
         )
-        db.session.add(new_tx); db.session.commit()
-        flash(f'Deposited ${amount} {currency}!')
+        db.session.add(new_tx)
+        db.session.commit()
+        # Flash appropriate message
+        if deposit_type == 'add_fund':
+            flash(f'✅ Added ${amount} {currency} to available funds!')
+        elif deposit_type == 'withdraw_fund':
+            flash(f'✅ Withdrew ${amount} {currency} from available funds!')
+        elif deposit_type == 'profit':
+            flash(f'✅ Added ${amount} {currency} to funds and profit!')
+        elif deposit_type == 'cost':
+            flash(f'✅ Recorded ${amount} {currency} cost (subtracted from funds and profit)!')
+
         return redirect(url_for('deposit'))
-    total_deposits = db.session.query(func.sum(Transaction.to_amount)).filter_by(client_id=session['selected_client_id']).scalar() or 0
-    return render_template('deposit.html', total_deposits=total_deposits, client=client,
-                           current_fee=0, current_flat_fee=0)
+
+    total_deposits = 0
+    if client:
+        # Calculate available funds (add_fund + profit - withdraw_fund - cost)
+        deposits_query = db.session.query(func.sum(Transaction.to_amount)).filter_by(
+            client_id=client.id, is_deposit=True, tenant_id=session.get('tenant_id')
+        )
+        total_deposits = deposits_query.scalar() or 0
+
+    return render_template('deposit.html', total_deposits=total_deposits, client=client)
+
+@app.route('/account')
+@login_required
+def account():
+    balances = get_balances()
+
+    # Currency names and country codes for flag images (from Sharif Exchange)
+    currency_data = {
+        # Main currencies from Sharif Exchange
+        'CAD': {'name': 'Canadian Dollar', 'country': 'ca'},
+        'USD': {'name': 'US Dollar', 'country': 'us'},
+        'EUR': {'name': 'Euro', 'country': 'eu'},
+        'GBP': {'name': 'British Pound', 'country': 'gb'},
+        'CHF': {'name': 'Swiss Franc', 'country': 'ch'},
+        'AUD': {'name': 'Australian Dollar', 'country': 'au'},
+        'MXN': {'name': 'Mexican Peso', 'country': 'mx'},
+        'JPY': {'name': 'Japanese Yen', 'country': 'jp'},
+        'CNY': {'name': 'Chinese Yuan', 'country': 'cn'},
+        'AED': {'name': 'UAE Dirham', 'country': 'ae'},
+
+        # Other currencies from Sharif Exchange
+        'ARS': {'name': 'Argentine Peso', 'country': 'ar'},
+        'BSD': {'name': 'Bahamas Dollar', 'country': 'bs'},
+        'BHD': {'name': 'Bahrain Dinar', 'country': 'bh'},
+        'BBD': {'name': 'Barbados Dollar', 'country': 'bb'},
+        'BMD': {'name': 'Bermuda Dollar', 'country': 'bm'},
+        'BRL': {'name': 'Brazilian Real', 'country': 'br'},
+        'BGL': {'name': 'Bulgarian Leva', 'country': 'bg'},
+        'KYD': {'name': 'Cayman Island Dollar', 'country': 'ky'},
+        'XAF': {'name': 'Central African Franc', 'country': 'cf'},
+        'CLP': {'name': 'Chilean Peso', 'country': 'cl'},
+        'COP': {'name': 'Colombian Peso', 'country': 'co'},
+        'CRC': {'name': 'Costa Rican Colon', 'country': 'cr'},
+        'CZK': {'name': 'Czech Koruna', 'country': 'cz'},
+        'DOP': {'name': 'Dominican Peso', 'country': 'do'},
+        'XCD': {'name': 'East Caribbean Dollar', 'country': 'ag'},
+        'EGP': {'name': 'Egyptian Pound', 'country': 'eg'},
+        'GTQ': {'name': 'Guatemalan Quetzal', 'country': 'gt'},
+        'GNF': {'name': 'Guinea Franc', 'country': 'gn'},
+        'HNL': {'name': 'Honduran Lempira', 'country': 'hn'},
+        'HKD': {'name': 'Hong Kong Dollar', 'country': 'hk'},
+        'HUF': {'name': 'Hungarian Forint', 'country': 'hu'},
+        'ISK': {'name': 'Icelandic Kronur', 'country': 'is'},
+        'INR': {'name': 'Indian Rupee', 'country': 'in'},
+        'IDR': {'name': 'Indonesian Rupiah', 'country': 'id'},
+        'IQD': {'name': 'Iraqi Dinar', 'country': 'iq'},
+        'IRR': {'name': 'Iranian Rial', 'country': 'ir'},
+        'ILS': {'name': 'Israeli Shekel', 'country': 'il'},
+        'JMD': {'name': 'Jamaican Dollar', 'country': 'jm'},
+        'JOD': {'name': 'Jordanian Dinar', 'country': 'jo'},
+        'KES': {'name': 'Kenyan Shilling', 'country': 'ke'},
+        'KWD': {'name': 'Kuwaiti Dinar', 'country': 'kw'},
+        'LBP': {'name': 'Lebanese Pound', 'country': 'lb'},
+        'MYR': {'name': 'Malaysian Ringgit', 'country': 'my'},
+        'MAD': {'name': 'Moroccan Dirham', 'country': 'ma'},
+        'NZD': {'name': 'New Zealand Dollar', 'country': 'nz'},
+        'NOK': {'name': 'Norwegian Krone', 'country': 'no'},
+        'OMR': {'name': 'Omani Rial', 'country': 'om'},
+        'PEN': {'name': 'Peruvian Soles', 'country': 'pe'},
+        'PHP': {'name': 'Philippine Peso', 'country': 'ph'},
+        'PLN': {'name': 'Polish Zloty', 'country': 'pl'},
+        'QAR': {'name': 'Qatari Riyal', 'country': 'qa'},
+        'RON': {'name': 'Romanian Leu', 'country': 'ro'},
+        'RUB': {'name': 'Russian Ruble', 'country': 'ru'},
+        'SAR': {'name': 'Saudi Riyal', 'country': 'sa'},
+        'SCO': {'name': 'Scottish Pound', 'country': 'gb'},
+        'SGD': {'name': 'Singapore Dollar', 'country': 'sg'},
+        'ZAR': {'name': 'South African Rand', 'country': 'za'},
+        'KRW': {'name': 'South Korean Won', 'country': 'kr'},
+        'SEK': {'name': 'Swedish Krona', 'country': 'se'},
+        'TWD': {'name': 'New Taiwan Dollar', 'country': 'tw'},
+        'TZS': {'name': 'Tanzanian Shilling', 'country': 'tz'},
+        'THB': {'name': 'Thai Baht', 'country': 'th'},
+        'TND': {'name': 'Tunisian Dinar', 'country': 'tn'},
+        'TRY': {'name': 'Turkish Lira', 'country': 'tr'},
+        'UAH': {'name': 'Ukrainian Hryvnia', 'country': 'ua'},
+        'UYU': {'name': 'Uruguayan Peso', 'country': 'uy'},
+        'VND': {'name': 'Vietnamese Dong', 'country': 'vn'},
+        'XOF': {'name': 'West African Franc', 'country': 'bf'},
+        'DKK': {'name': 'Danish Krone', 'country': 'dk'}
+    }
+
+    # Get live exchange rates from database/API (CAD base for display)
+    rates_to_cad = get_exchange_rates_to_cad()
+
+    # Prepare balance data for display (showing all currencies from Sharif Exchange)
+    account_balances = []
+    currency_order = [
+        # Main currencies
+        'CAD', 'USD', 'EUR', 'GBP', 'CHF', 'AUD', 'MXN', 'JPY', 'CNY', 'AED',
+        # Other currencies in alphabetical order
+        'ARS', 'BBD', 'BGL', 'BHD', 'BMD', 'BSD', 'BRL', 'CLP', 'COP', 'CRC',
+        'CZK', 'DKK', 'DOP', 'EGP', 'GNF', 'GTQ', 'HKD', 'HNL', 'HUF', 'IDR',
+        'ILS', 'INR', 'IQD', 'IRR', 'ISK', 'JMD', 'JOD', 'KES', 'KRW', 'KWD',
+        'KYD', 'LBP', 'MAD', 'MYR', 'NOK', 'NZD', 'OMR', 'PEN', 'PHP', 'PLN',
+        'QAR', 'RON', 'RUB', 'SAR', 'SCO', 'SEK', 'SGD', 'THB', 'TND', 'TRY',
+        'TWD', 'TZS', 'UAH', 'UYU', 'VND', 'XAF', 'XCD', 'ZAR'
+    ]
+
+    for currency_code in currency_order:
+        balance = balances.get(currency_code, 0)
+        display_balance = 'NA' if balance == 0 else f'{balance:.2f}'
+        currency_info = currency_data.get(currency_code, {'name': currency_code, 'flag': ''})
+        rate_from_cad = rates_to_cad.get(currency_code, None)
+        if rate_from_cad and isinstance(rate_from_cad, (int, float)) and rate_from_cad > 0:
+            # Convert from "1 CAD = X currency" to "1 currency = Y CAD"
+            rate_to_cad = 1.0 / rate_from_cad
+            display_rate = f"{rate_to_cad:.4f}"
+        else:
+            display_rate = 'N/A'
+
+        account_balances.append({
+            'name': currency_info['name'],
+            'code': currency_code,
+            'country': currency_info['country'],
+            'rate': display_rate,
+            'balance': display_balance
+        })
+
+    # Get last update time
+    last_update = None
+    try:
+        latest_rate = ExchangeRate.query.filter_by(
+            tenant_id=session.get('tenant_id', 1)
+        ).order_by(ExchangeRate.last_updated.desc()).first()
+        if latest_rate:
+            last_update = latest_rate.last_updated
+    except:
+        pass
+
+    return render_template('account.html', account_balances=account_balances, last_update=last_update)
 
 @app.route('/reports')
+@login_required
 def reports():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-
-    transactions = Transaction.query.filter_by(status='closed').all()
+    transactions = Transaction.query.filter_by(status='closed', tenant_id=session.get('tenant_id')).all()
 
     daily_profit = {}
     week_total = 0
@@ -731,7 +2857,6 @@ def reports():
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
-    today_str = now.strftime('%Y-%m-%d')
 
     import re
     profit_pattern = re.compile(r'Profit:\s*\$(?P<profit>[\d.]+)\s*CAD', re.IGNORECASE)
@@ -739,143 +2864,329 @@ def reports():
     for tx in transactions:
         date_str = tx.date.strftime('%Y-%m-%d')
 
-        # Extract profit from notes
-        profit = 0.0
-        if tx.notes:
-            match = profit_pattern.search(tx.notes)
-            if match:
-                try:
-                    profit = float(match.group('profit'))
-                except:
-                    profit = 0.0
+        # Use total_fee_cad for fund management transactions, otherwise parse notes
+        if tx.is_deposit:
+            profit = tx.total_fee_cad or 0
+        else:
+            profit = 0.0
+            if tx.notes:
+                match = profit_pattern.search(tx.notes)
+                if match:
+                    try: profit = float(match.group('profit'))
+                    except: profit = 0.0
 
         volume = round((tx.from_amount + tx.to_amount) / 2, 2)
 
         if date_str not in daily_profit:
             daily_profit[date_str] = {'count': 0, 'volume': 0, 'profit': 0}
-
         daily_profit[date_str]['count'] += 1
         daily_profit[date_str]['volume'] += volume
         daily_profit[date_str]['profit'] += profit
 
-        if tx.date >= week_ago:
-            week_total += profit
-        if tx.date >= month_ago:
-            month_total += profit
+        if tx.date >= week_ago: week_total += profit
+        if tx.date >= month_ago: month_total += profit
 
     sorted_daily = dict(sorted(daily_profit.items(), key=lambda x: x[0], reverse=True))
 
-    current_fee = round(FEE_PERCENTAGE * 100, 1)
-    current_flat_fee = round(FLAT_FEE_CAD, 2)
-
     return render_template('reports.html',
                            daily_profit=sorted_daily,
-                           today=today_str,
+                           today=now.strftime('%Y-%m-%d'),
                            week_total=round(week_total, 2),
                            month_total=round(month_total, 2),
-                           current_fee=current_fee,
-                           current_flat_fee=current_flat_fee)
-
-@app.route('/download_receipt/<int:tx_id>')
-def download_receipt(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
-    if not tx.receipt_filename: flash('No receipt found!'); return redirect(url_for('transactions'))
-    return send_from_directory(app.config['RECEIPT_FOLDER'], tx.receipt_filename)
-
-@app.route('/set_fees', methods=['POST'])
-def set_fees():
-    if 'user_id' not in session or not session.get('is_admin'): return redirect(url_for('login'))
-    global FEE_PERCENTAGE, FLAT_FEE_CAD
-    FEE_PERCENTAGE = float(request.form['fee_percentage']) / 100
-    FLAT_FEE_CAD = float(request.form['flat_fee_cad'])
-    flash(f'Fees: {FEE_PERCENTAGE*100}% + ${FLAT_FEE_CAD} CAD!')
-    return redirect(url_for('transactions'))
-
-
+                           current_fee=round(FEE_PERCENTAGE * 100, 1),
+                           current_flat_fee=round(FLAT_FEE_CAD, 2))
 
 @app.route('/print_receipt/<int:tx_id>')
+@login_required
 def print_receipt(tx_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
+    client2 = tx.client_2
 
-    # === CALCULATE PROFIT & FEES ===
-    flat_fee_in_tx_currency = FLAT_FEE_CAD
-
-    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+    profit_cad = round(FLAT_FEE_CAD + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     return render_template('print_receipt.html',
-                           tx=tx,
-                           client=client,
-                           exchange_name=EXCHANGE_NAME,
-                           profit_cad=profit_cad,
-                           flat_fee_cad=FLAT_FEE_CAD,
-                           current_fee=round(FEE_PERCENTAGE * 100, 1),
-                           fee_percentage=FEE_PERCENTAGE)
+                           tx=tx, client=client, client2=client2, exchange_name=EXCHANGE_NAME,
+                           profit_cad=profit_cad, flat_fee_cad=FLAT_FEE_CAD,
+                           current_fee=round(FEE_PERCENTAGE * 100, 1), fee_percentage=FEE_PERCENTAGE)
 
 @app.route('/download_pdf/<int:tx_id>')
+@login_required
 def download_pdf(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
     client = tx.client
-
-    flat_fee_in_tx_currency = FLAT_FEE_CAD
-    if tx.from_currency != 'CAD':
-        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
-    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+    client2 = tx.client_2
+    profit_cad = round(FLAT_FEE_CAD + (tx.from_amount * FEE_PERCENTAGE), 2)
 
     html_content = render_template('print_receipt.html',
-                                   tx=tx, client=client,
-                                   exchange_name=EXCHANGE_NAME,
-                                   profit_cad=profit_cad,
-                                   flat_fee_cad=FLAT_FEE_CAD,
-                                   current_fee=round(FEE_PERCENTAGE * 100, 1),
-                                   fee_percentage=FEE_PERCENTAGE,
+                                   tx=tx, client=client, client2=client2, exchange_name=EXCHANGE_NAME,
+                                   profit_cad=profit_cad, flat_fee_cad=FLAT_FEE_CAD,
+                                   current_fee=round(FEE_PERCENTAGE * 100, 1), fee_percentage=FEE_PERCENTAGE,
                                    is_download=True)
 
     pdf = pdfkit.from_string(html_content, False, configuration=config_pdf)
-
-    return send_file(
-        io.BytesIO(pdf),
-        as_attachment=True,
-        download_name=f"Receipt_{tx.tx_ref}.pdf",
-        mimetype='application/pdf'
-    )
+    return send_file(BytesIO(pdf), as_attachment=True, download_name=f"Receipt_{tx.tx_ref}.pdf", mimetype='application/pdf')
 
 @app.route('/download_png/<int:tx_id>')
+@login_required
 def download_png(tx_id):
+    tx = Transaction.query.filter_by(id=tx_id, tenant_id=session.get('tenant_id')).first_or_404()
+    client = tx.client
+    profit_cad = round(FLAT_FEE_CAD + (tx.from_amount * FEE_PERCENTAGE), 2)
+
+    html_content = render_template('print_receipt.html',
+                                   tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                                   profit_cad=profit_cad, flat_fee_cad=FLAT_FEE_CAD,
+                                   current_fee=round(FEE_PERCENTAGE * 100, 1), fee_percentage=FEE_PERCENTAGE,
+                                   is_download=True)
+
+    png_data = imgkit.from_string(html_content, False, config=config_img, options={'format': 'png', 'width': 300})
+    return send_file(BytesIO(png_data), as_attachment=True, download_name=f"Receipt_{tx.tx_ref}.png", mimetype='image/png')
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    first_time = request.args.get('first_time')
+
+    if request.method == 'POST':
+        current_pwd = request.form.get('current_password')
+        new_pwd = request.form.get('new_password')
+        confirm_pwd = request.form.get('confirm_password')
+
+        if not check_password_hash(current_user.password, current_pwd):
+            flash('Current password incorrect.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        if new_pwd != confirm_pwd:
+            flash('Passwords do not match.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        if len(new_pwd) < 6:
+            flash('Password too short.', 'danger')
+            return redirect(url_for('change_password', first_time=first_time))
+
+        current_user.password = generate_password_hash(new_pwd)
+        current_user.requires_password_change = False
+        db.session.commit()
+        flash('Password changed!', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('change_password.html', first_time=first_time)
+
+
+
+@app.route('/set_fees', methods=['POST'])
+@login_required
+def set_fees():
+    if not session.get('is_admin'):
+        flash('Admin access required!', 'danger')
+        return redirect(url_for('profile'))
+
+    global FEE_PERCENTAGE, FLAT_FEE_CAD
+    updated = False
+    messages = []
+
+    # === PERCENTAGE FEE ===
+    perc_raw = request.form['fee_percentage'].strip()
+    if perc_raw:  # Only update if not empty
+        try:
+            perc = float(perc_raw)
+            if 0 <= perc <= 10:
+                FEE_PERCENTAGE = perc / 100
+                messages.append(f"{perc:.1f}%")
+                updated = True
+            else:
+                flash('Percentage must be 0–10!', 'danger')
+                return redirect(url_for('profile'))
+        except ValueError:
+            flash('Invalid percentage! Use numbers only.', 'danger')
+            return redirect(url_for('profile'))
+    else:
+        messages.append(f"{FEE_PERCENTAGE * 100:.1f}%")
+
+    # === FLAT FEE ===
+    flat_raw = request.form['flat_fee_cad'].strip()
+    if flat_raw:  # Only update if not empty
+        try:
+            flat = float(flat_raw)
+            if 0 <= flat <= 50:
+                FLAT_FEE_CAD = flat
+                messages.append(f"${flat:.2f} CAD")
+                updated = True
+            else:
+                flash('Flat fee must be 0–50!', 'danger')
+                return redirect(url_for('profile'))
+        except ValueError:
+            flash('Invalid flat fee! Use numbers only.', 'danger')
+            return redirect(url_for('profile'))
+    else:
+        messages.append(f"${FLAT_FEE_CAD:.2f} CAD")
+
+    # === FINAL MESSAGE ===
+    if updated:
+        flash(f'Fees updated → {" + ".join(messages)}', 'success')
+    else:
+        flash('No changes made.', 'info')
+
+    return redirect(url_for('profile'))
+
+
+
+@app.route('/send_telegram_receipt/<int:tx_id>', methods=['POST'])
+@login_required
+def send_telegram_receipt(tx_id):
+    tx = Transaction.query.get_or_404(tx_id)
+    client = tx.client
+    raw_id = client.telegram_id.strip() if client.telegram_id else ""
+
+    if not raw_id:
+        return jsonify({'error': 'No Telegram ID'}), 400
+
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        return jsonify({'error': 'Bot token missing'}), 500
+
+    # SUPPORT @username OR numeric
+    chat_id = None
+    bot = Bot(token=token)
+    if raw_id.startswith('@'):
+        try:
+            chat = bot.get_chat(raw_id)
+            chat_id = chat.id
+        except TelegramError as e:
+            app.logger.error(f"Invalid @username: {e}")
+            return jsonify({'error': 'Invalid @username'}), 400
+    else:
+        if not raw_id.isdigit():
+            return jsonify({'error': 'Invalid ID'}), 400
+        chat_id = int(raw_id)
+
+    # Generate PDF
+    pdf_path = os.path.join(app.config['RECEIPT_FOLDER'], f"{tx.tx_ref}.pdf")
+    try:
+        html = render_template('print_receipt.html',
+                               tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                               profit_cad=tx.total_fee_cad or 0,
+                               flat_fee_cad=FLAT_FEE_CAD,
+                               current_fee=round(FEE_PERCENTAGE * 100, 1),
+                               fee_percentage=FEE_PERCENTAGE,
+                               is_download=True)
+        pdf_data = pdfkit.from_string(html, False, configuration=config_pdf)
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_data)
+
+        # === ASYNC SEND (FIXED) ===
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            with open(pdf_path, 'rb') as f:
+                loop.run_until_complete(
+                    bot.send_document(
+                        chat_id=chat_id,
+                        document=f,
+                        caption=f"Receipt {tx.tx_ref}\n{EXCHANGE_NAME}",
+                        filename=f"Receipt_{tx.tx_ref}.pdf"
+                    )
+                )
+            return jsonify({'status': 'sent'}), 200
+        except TelegramError as e:
+            app.logger.error(f"Telegram send failed: {e}")
+            return jsonify({'error': 'Send failed'}), 500
+        finally:
+            loop.close()
+
+    except Exception as e:
+        app.logger.error(f"PDF error: {e}")
+        return jsonify({'error': 'PDF failed'}), 500
+    finally:
+        if os.path.exists(pdf_path):
+            try: os.remove(pdf_path)
+            except: pass
+
+
+@app.route('/send_email_receipt/<int:tx_id>', methods=['POST'])
+@login_required
+def send_email_receipt(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     client = tx.client
 
-    flat_fee_in_tx_currency = FLAT_FEE_CAD
-    if tx.from_currency != 'CAD':
-        flat_fee_in_tx_currency = FLAT_FEE_CAD / tx.exchange_rate
-    profit_cad = round(flat_fee_in_tx_currency + (tx.from_amount * FEE_PERCENTAGE), 2)
+    if not client.email:
+        return jsonify({'error': 'No email address'}), 400
 
-    html_content = render_template('print_receipt.html',
-                                   tx=tx, client=client,
-                                   exchange_name=EXCHANGE_NAME,
-                                   profit_cad=profit_cad,
-                                   flat_fee_cad=FLAT_FEE_CAD,
-                                   current_fee=round(FEE_PERCENTAGE * 100, 1),
-                                   fee_percentage=FEE_PERCENTAGE,
-                                   is_download=True)
+    # Generate PDF
+    pdf_path = os.path.join(app.config['RECEIPT_FOLDER'], f"{tx.tx_ref}.pdf")
+    try:
+        html = render_template('print_receipt.html',
+                               tx=tx, client=client, exchange_name=EXCHANGE_NAME,
+                               profit_cad=tx.total_fee_cad or 0,
+                               flat_fee_cad=FLAT_FEE_CAD,
+                               current_fee=round(FEE_PERCENTAGE * 100, 1),
+                               fee_percentage=FEE_PERCENTAGE,
+                               is_download=True)
 
-    png_data = imgkit.from_string(
-        html_content,
-        False,
-        config=config_img,
-        options={'format': 'png', 'width': 300}
+        pdf_data = pdfkit.from_string(html, False, configuration=config_pdf)
+        with open(pdf_path, 'wb') as f:
+            f.write(pdf_data)
+
+        # Send email with PDF attachment
+        msg = Message(
+            subject=f"Receipt {tx.tx_ref} - {EXCHANGE_NAME}",
+            recipients=[client.email],
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            body=f"""
+Dear {client.first_name} {client.last_name},
+
+Please find attached your receipt for transaction #{tx.tx_ref}.
+
+Transaction Details:
+- Date: {tx.date.strftime('%Y-%m-%d %H:%M')}
+- Amount: {tx.from_amount} {tx.from_currency} → {tx.to_amount} {tx.to_currency}
+- Reference: {tx.tx_ref}
+
+Thank you for your business!
+
+{EXCHANGE_NAME}
+"""
+        )
+
+        with open(pdf_path, 'rb') as f:
+            msg.attach(
+                filename=f"Receipt_{tx.tx_ref}.pdf",
+                content_type='application/pdf',
+                data=f.read()
+            )
+
+        mail.send(msg)
+        return jsonify({'status': 'sent'}), 200
+
+    except Exception as e:
+        app.logger.error(f"Email send error: {e}")
+        return jsonify({'error': 'Send failed'}), 500
+    finally:
+        if os.path.exists(pdf_path):
+            try: os.remove(pdf_path)
+            except: pass
+
+@app.route('/download_receipt/<int:tx_id>')
+@login_required
+def download_receipt(tx_id):
+    """Legacy alias — redirects to download_pdf"""
+    return redirect(url_for('download_pdf', tx_id=tx_id))
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(
+        app.static_folder,
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
     )
 
-    return send_file(
-        io.BytesIO(png_data),
-        as_attachment=True,
-        download_name=f"Receipt_{tx.tx_ref}.png",
-        mimetype='image/png'
-    )
-
+# === START BACKGROUND SERVICES ===
+with app.app_context():
+    try:
+        start_rate_scheduler()
+    except Exception as e:
+        print(f"Could not start rate scheduler: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True)

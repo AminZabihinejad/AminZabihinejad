@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ exchange_name }} - Transaction Report</title>
+    <style>
+        /* PDF LANDSCAPE ORIENTATION - controlled by pdfkit options */
+        @page {
+            size: A4 landscape;
+            margin: 0.25in;
+        }
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 24pt;
+            margin: 0;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+        .header h2 {
+            font-size: 14pt;
+            margin: 10px 0;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+        .header p {
+            margin: 5px 0;
+            font-size: 10pt;
+            color: #666;
+        }
+
+        .filters-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+        }
+        .filters-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 12pt;
+            color: #495057;
+        }
+        .filters-grid {
+            display: table;
+            width: 100%;
+        }
+        .filter-row {
+            display: table-row;
+        }
+        .filter-label {
+            display: table-cell;
+            font-weight: bold;
+            padding: 3px 10px 3px 0;
+            width: 120px;
+            font-size: 9pt;
+        }
+        .filter-value {
+            display: table-cell;
+            padding: 3px 0;
+            font-size: 9pt;
+        }
+
+        .summary-section {
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6c3;
+        }
+        .summary-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 12pt;
+            color: #155724;
+        }
+        .summary-grid {
+            display: table;
+            width: 100%;
+        }
+        .summary-row {
+            display: table-row;
+        }
+        .summary-label {
+            display: table-cell;
+            font-weight: bold;
+            padding: 4px 10px 4px 0;
+            width: 140px;
+            font-size: 10pt;
+        }
+        .summary-value {
+            display: table-cell;
+            padding: 4px 0;
+            font-size: 10pt;
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 5.5pt;
+            table-layout: fixed;
+        }
+        th {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 4px 2px;
+            text-align: left;
+            font-weight: bold;
+            font-size: 7pt;
+            writing-mode: horizontal-tb;
+        }
+        td {
+            border: 1px solid #dee2e6;
+            padding: 3px 2px;
+            vertical-align: top;
+        }
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        tr:hover {
+            background: #e3f2fd;
+        }
+
+        .tx-id {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .currency {
+            font-weight: bold;
+            text-align: right;
+        }
+        .amount {
+            text-align: right;
+            font-family: 'Courier New', monospace;
+        }
+        .client-name {
+            font-weight: bold;
+        }
+        .status-closed {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .status-pending {
+            color: #e67e22;
+            font-weight: bold;
+        }
+        .status-other {
+            color: #95a5a6;
+        }
+        .fintrac-yes {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .page-break {
+            page-break-before: always;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 50px;
+            font-size: 12pt;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER -->
+    <div class="header">
+        <h1>{{ exchange_name }}</h1>
+        <h2>Transaction Report (Landscape)</h2>
+        <p>Generated on: {{ report_date }}</p>
+        <p>Report Period: {{ from_date or 'All dates' }} to {{ to_date or 'All dates' }}</p>
+    </div>
+
+    <!-- FILTERS APPLIED -->
+    <div class="filters-section">
+        <h3>Applied Filters</h3>
+        <div class="filters-grid">
+            {% if from_date or to_date %}
+            <div class="filter-row">
+                <div class="filter-label">Date Range:</div>
+                <div class="filter-value">{{ from_date or 'N/A' }} to {{ to_date or 'N/A' }}</div>
+            </div>
+            {% endif %}
+            {% if search_client %}
+            <div class="filter-row">
+                <div class="filter-label">Client:</div>
+                <div class="filter-value">{{ search_client }}</div>
+            </div>
+            {% endif %}
+            {% if search_from or search_to %}
+            <div class="filter-row">
+                <div class="filter-label">Currencies:</div>
+                <div class="filter-value">From: {{ search_from or 'All' }} | To: {{ search_to or 'All' }}</div>
+            </div>
+            {% endif %}
+            {% if fintrac %}
+            <div class="filter-row">
+                <div class="filter-label">FINTRAC:</div>
+                <div class="filter-value">{{ fintrac.title() }}</div>
+            </div>
+            {% endif %}
+            {% if status %}
+            <div class="filter-row">
+                <div class="filter-label">Status:</div>
+                <div class="filter-value">{{ status.title() }}</div>
+            </div>
+            {% endif %}
+            {% if not (from_date or to_date or search_client or search_from or search_to or fintrac or status) %}
+            <div class="filter-row">
+                <div class="filter-label">Filters:</div>
+                <div class="filter-value">No filters applied (all transactions)</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- COMPREHENSIVE SUMMARY STATISTICS -->
+    <div class="summary-section">
+        <h3>Comprehensive Report Summary</h3>
+        <div class="summary-grid">
+            <div class="summary-row">
+                <div class="summary-label">Total Transactions:</div>
+                <div class="summary-value">{{ total_transactions }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Total Volume (From Currencies):</div>
+                <div class="summary-value">${{ "%.2f"|format(total_volume_from) }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Total Volume (To Currencies):</div>
+                <div class="summary-value">${{ "%.2f"|format(total_volume_to) }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Total Fees Collected (CAD):</div>
+                <div class="summary-value">${{ "%.2f"|format(total_profit) }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Average Fee per Transaction:</div>
+                <div class="summary-value">${{ "%.2f"|format(total_profit / total_transactions) if total_transactions > 0 else "0.00" }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Fee Structure Applied:</div>
+                <div class="summary-value">{{ current_fee }}% + ${{ "%.2f"|format(current_flat_fee) }} CAD</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">FINTRAC Reportable Transactions:</div>
+                <div class="summary-value">{{ fintrac_count }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Deposit/Fund Transactions:</div>
+                <div class="summary-value">{{ deposit_count }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Exchange Transactions:</div>
+                <div class="summary-value">{{ exchange_count }}</div>
+            </div>
+            <div class="summary-row">
+                <div class="summary-label">Unique Clients:</div>
+                <div class="summary-value">{{ unique_clients }}</div>
+            </div>
+        </div>
+    </div>
+
+    {% if transactions %}
+    <!-- COMPREHENSIVE TRANSACTIONS TABLE -->
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 48px;">Transaction<br>ID</th>
+                <th style="width: 65px;">Date &<br>Time</th>
+                <th style="width: 55px;">Client<br>Name</th>
+                <th style="width: 65px;">Client<br>Email</th>
+                <th style="width: 55px;">Client<br>Phone</th>
+                <th style="width: 42px;">From<br>Currency</th>
+                <th style="width: 52px;">From<br>Amount</th>
+                <th style="width: 42px;">To<br>Currency</th>
+                <th style="width: 52px;">To<br>Amount</th>
+                <th style="width: 48px;">Exchange<br>Rate</th>
+                <th style="width: 48px;">Rate<br>From→CAD</th>
+                <th style="width: 48px;">Rate<br>To→CAD</th>
+                <th style="width: 52px;">Payment<br>Method From</th>
+                <th style="width: 52px;">Payment<br>Method To</th>
+                <th style="width: 48px;">Payment<br>Note</th>
+                <th style="width: 52px;">Source of<br>Funds</th>
+                <th style="width: 55px;">Transaction<br>Reason</th>
+                <th style="width: 42px;">FINTRAC<br>Report</th>
+                <th style="width: 38px;">Status</th>
+                <th style="width: 42px;">Is<br>Deposit</th>
+                <th style="width: 48px;">Deposit<br>Type</th>
+                <th style="width: 55px;">Receipt<br>Filename</th>
+                <th style="width: 48px;">Notes</th>
+                <th style="width: 48px;">Total Fee<br>(CAD)</th>
+                <th style="width: 48px;">Profit/<br>Loss</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in transactions %}
+            <tr>
+                <td class="tx-id">{{ tx.tx_ref }}</td>
+                <td>{{ tx.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td class="client-name">{{ tx.client.first_name if tx.client else 'Unknown' }} {{ tx.client.last_name if tx.client else '' }}{% if tx.client_2 %} + {{ tx.client_2.first_name }} {{ tx.client_2.last_name }}{% endif %}</td>
+                <td>{{ tx.client.email if tx.client and tx.client.email else '' }}</td>
+                <td>{{ tx.client.phone if tx.client and tx.client.phone else '' }}</td>
+                <td class="currency">{{ tx.from_currency }}</td>
+                <td class="amount">{{ "%.6f"|format(tx.from_amount) }}</td>
+                <td class="currency">{{ tx.to_currency }}</td>
+                <td class="amount">{{ "%.6f"|format(tx.to_amount) }}</td>
+                <td class="amount">{{ "%.6f"|format(tx.exchange_rate) }}</td>
+                <td class="amount">{{ "%.6f"|format(tx.rate_from_cad) }}</td>
+                <td class="amount">{{ "%.6f"|format(tx.rate_to_cad) }}</td>
+                <td>{{ tx.payment_method_from or '' }}</td>
+                <td>{{ tx.payment_method_to or '' }}</td>
+                <td>{{ tx.payment_note or '' }}</td>
+                <td>{{ tx.source_of_funds or '' }}</td>
+                <td>{{ tx.transaction_reason or '' }}</td>
+                <td class="{% if tx.is_fintrac %}fintrac-yes{% endif %}">{{ 'YES' if tx.is_fintrac else 'NO' }}</td>
+                <td class="status-{{ tx.status|default('closed') }}">{{ tx.status|default('closed')|title }}</td>
+                <td>{{ 'YES' if tx.is_deposit else 'NO' }}</td>
+                <td>{{ tx.deposit_type or '' }}</td>
+                <td>{{ tx.receipt_filename or '' }}</td>
+                <td>{{ tx.notes or '' }}</td>
+                <td class="amount">${{ "%.2f"|format(tx.total_fee_cad or 0) }}</td>
+                <td class="amount">
+                    {% if tx.is_deposit %}
+                        ${{ "%.2f"|format(tx.total_fee_cad or 0) }}
+                    {% else %}
+                        ${{ "%.2f"|format((tx.from_amount * (current_fee/100) * 100) + current_flat_fee) }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="no-data">
+        <h3>No Transactions Found</h3>
+        <p>No transactions match the applied filters.</p>
+    </div>
+    {% endif %}
+
+    <!-- FOOTER -->
+    <div class="footer">
+        <p><strong>{{ exchange_name }}</strong> - Transaction Report</p>
+        <p>Generated on {{ report_date }} | {{ total_transactions }} transactions | Total Profit: ${{ "%.2f"|format(total_profit) }}</p>
+        <p>This report contains confidential financial information. Keep secure.</p>
+    </div>
+</body>
+</html>

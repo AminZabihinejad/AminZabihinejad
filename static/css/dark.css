@@ -1,0 +1,135 @@
+/* DARK MODE - MoneyExchange Pro - PERFECT READABILITY */
+* {
+    transition: all 0.3s ease !important;
+}
+
+/* BODY */
+body {
+    background: #0d0d0d !important;
+    color: #e8e8e8 !important;
+}
+
+/* ALL TEXT */
+h1, h2, h3, h4, h5, h6, p, span, div, label, small, td, th, a, li, strong, em, b, i {
+    color: #e8e8e8 !important;
+}
+a { color: #5cb3ff !important; }
+a:hover { color: #80c1ff !important; }
+
+/* TABLES */
+table {
+    background: #1a1a1a !important;
+    border: 1px solid #333 !important;
+}
+th {
+    background: #252525 !important;
+    color: #bbbbbb !important;
+}
+td {
+    background: #1a1a1a !important;
+    color: #dddddd !important;
+}
+tr:hover td {
+    background: #2a2a2a !important;
+}
+
+/* INPUTS */
+input, select, textarea {
+    background: #2c2c2c !important;
+    color: #ffffff !important;
+    border: 1px solid #555 !important;
+    border-radius: 6px !important;
+}
+input::placeholder { color: #999 !important; }
+
+/* FEE BOXES */
+input[name="fee_percentage"], input[name="flat_fee_cad"] {
+    background: #333333 !important;
+    color: #ffffff !important;
+    border-radius: 6px !important;
+}
+
+/* BALANCE BARS */
+div[style*="background"][style*="green"] {
+    background: #16222a !important;
+    color: #00ffaa !important;
+    border-left: 6px solid #00d4aa !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    box-shadow: 0 4px 15px rgba(0, 212, 170, 0.2) !important;
+}
+
+/* HEADER - DARK NAVY */
+div[style*="Amin Zabihinejad"] {
+    background: #1a1a2e !important;
+    color: #ffffff !important;
+    border-radius: 16px !important;
+    padding: 16px !important;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6) !important;
+}
+div[style*="Change"], div[style*="Edit"] {
+    background: #2c3e50 !important;
+    color: #cccccc !important;
+    border-radius: 8px !important;
+}
+
+/* NOTES BAR - DARK GRAY + ORANGE */
+div[style*="Notes"] {
+    background: #2d2d2d !important;
+    color: #cccccc !important;
+    border-left: 6px solid #f39c12 !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    margin: 12px 0 !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.4) !important;
+}
+div[style*="No notes"] {
+    color: #aaaaaa !important;
+    font-style: italic !important;
+}
+
+/* RISK BADGE - GLOW GREEN */
+span[style*="Low"] {
+    background: #27ae60 !important;
+    color: white !important;
+    padding: 8px 18px !important;
+    border-radius: 30px !important;
+    font-weight: bold !important;
+    box-shadow: 0 0 15px rgba(39,174,96,0.7) !important;
+}
+
+/* UPDATE FEES BAR */
+div[style*="UPDATE FEES"] {
+    background: #16222a !important;
+    color: #e8e8e8 !important;
+    border-left: 5px solid #3498db !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+}
+
+/* CURRENT BALANCES TITLE */
+h3, div[style*="Current Balances"] {
+    color: #cccccc !important;
+}
+
+/* RADIO BUTTONS */
+input[type="radio"] + label {
+    color: #bbbbbb !important;
+}
+
+/* BUTTONS */
+button, .btn {
+    background: #0088cc !important;
+    color: white !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+}
+button:hover { background: #0099dd !important; }
+
+/* PRINT */
+@media print {
+    * { background: white !important; color: black !important; }
+}
+
+/* FORCE */
+* { color: #e8e8e8 !important; }

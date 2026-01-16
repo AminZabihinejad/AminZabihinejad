@@ -25,8 +25,8 @@
             <td><input name="last_name" value="{{ client.last_name if client else '' }}" required style="width:180px;"></td>
         </tr>
         <tr>
-            <td>Email <span style="color:red;">*</span>:</td>
-            <td><input name="email" type="email" value="{{ client.email if client else '' }}" required style="width:180px;"></td>
+            <td>Email:</td>
+            <td><input name="email" type="email" value="{{ client.email if client else '' }}" style="width:180px;"></td>
             <td>Phone <span style="color:red;">*</span>:</td>
             <td><input name="phone" value="{{ client.phone if client else '' }}" required style="width:180px;"></td>
         </tr>
@@ -39,11 +39,11 @@
         <tr>
             <td style="width:110px;">Apt #:</td>
             <td><input name="apartment" value="{{ client.apartment if client else '' }}" placeholder="101" style="width:100px;"></td>
-            <td style="width:110px;">Civic # <span style="color:red;">*</span>:</td>
-            <td><input name="civic_number" value="{{ client.civic_number if client else '' }}" required style="width:100px;"></td>
+            <td style="width:110px;">Civic #:</td>
+            <td><input name="civic_number" value="{{ client.civic_number if client else '' }}" style="width:100px;"></td>
         </tr>
         <tr>
-            <td>Street <span style="color:red;">*</span>:</td>
+            <td>Address <span style="color:red;">*</span>:</td>
             <td colspan="3"><input name="street" value="{{ client.street if client else '' }}" required style="width:100%;"></td>
         </tr>
         <tr>
@@ -51,10 +51,38 @@
             <td><input name="city" value="{{ client.city if client else '' }}" required style="width:150px;"></td>
             <td>Province <span style="color:red;">*</span>:</td>
             <td><input name="province" value="{{ client.province if client else '' }}" required style="width:60px;"></td>
-            <td>Postal <span style="color:red;">*</span>:</td>
-            <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" required placeholder="M5V 2T6" style="width:90px;"></td>
+            <td>Postal:</td>
+            <td><input name="postal_code" value="{{ client.postal_code if client else '' }}" placeholder="M5V 2T6" style="width:90px;"></td>
+        </tr>
+        <tr>
+            <td>Country <span style="color:red;">*</span>:</td>
+            <td><input name="country" value="{{ client.country if client else '' }}" required style="width:150px;"></td>
+            <td>Job:</td>
+            <td><input name="job" value="{{ client.job if client else '' }}" style="width:180px;"></td>
         </tr>
     </table>
+</div>
+
+<!-- TELEGRAM ID WITH @userinfobot GUIDE -->
+<div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <h3>Telegram Receipt Delivery (Optional)</h3>
+    <div class="form-group">
+        <label for="telegram_id"><strong>Telegram ID:</strong></label>
+        <input type="text" name="telegram_id" id="telegram_id" 
+               value="{{ client.telegram_id if client else '' }}" 
+               placeholder="123456789" 
+               style="width:200px; padding:8px; font-size:14px;">
+        <div style="margin-top:8px; padding:12px; background:white; border:1px solid #ddd; border-radius:6px; font-size:13px;">
+            <strong>How to get your Telegram ID:</strong><br>
+            1. Open Telegram → Search <strong>@userinfobot</strong><br>
+            2. Tap the bot → Tap <strong>Start</strong><br>
+            3. Bot replies: <code>Id: 123456789</code><br>
+            4. <strong>Copy the number</strong> → Paste here<br><br>
+            <small style="color:#27ae60;">
+                <strong>Privacy:</strong> Only you see your ID. We send receipts directly.
+            </small>
+        </div>
+    </div>
 </div>
 
 <!-- 3 ID SECTIONS WITH FILE UPLOAD & LAST CHECK -->
@@ -72,6 +100,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id1_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id1_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id1_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id1_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id1_type == 'other' }}>Other</option>
                     </select>
@@ -120,6 +149,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id2_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id2_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id2_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id2_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id2_type == 'other' }}>Other</option>
                     </select>
@@ -168,6 +198,7 @@
                         <option value="">— Select Type —</option>
                         <option value="passport" {{ 'selected' if client and client.id3_type == 'passport' }}>Passport</option>
                         <option value="driver_license" {{ 'selected' if client and client.id3_type == 'driver_license' }}>Driver License</option>
+                        <option value="pr_card" {{ 'selected' if client and client.id3_type == 'pr_card' }}>PR Card</option>
                         <option value="insurance_card" {{ 'selected' if client and client.id3_type == 'insurance_card' }}>Insurance Card</option>
                         <option value="other" {{ 'selected' if client and client.id3_type == 'other' }}>Other</option>
                     </select>
@@ -214,6 +245,7 @@
             <td style="width:130px;"><strong>Risk Level <span style="color:red;">*</span>:</strong></td>
             <td>
                 <select name="risk_level" required style="width:200px;">
+                    <option value="no risk" {{ 'selected' if client and client.risk_level == 'no risk' }}>No Risk</option>
                     <option value="low risk" {{ 'selected' if client and client.risk_level == 'low risk' }}>Low Risk</option>
                     <option value="medium risk" {{ 'selected' if client and client.risk_level == 'medium risk' }}>Medium Risk</option>
                     <option value="high risk" {{ 'selected' if client and client.risk_level == 'high risk' }}>High Risk</option>
@@ -243,10 +275,12 @@
 <div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:20px;">
     <h4>Client Summary</h4>
     <p><strong>Risk:</strong> 
-        {% if client.risk_level == 'low risk' %}<span style="color:green;">LOW RISK</span>
+        {% if client.risk_level == 'no risk' %}<span style="color:#27ae60; font-weight:bold;">NO RISK</span>
+        {% elif client.risk_level == 'low risk' %}<span style="color:green;">LOW RISK</span>
         {% elif client.risk_level == 'medium risk' %}<span style="color:orange;">MEDIUM RISK</span>
         {% elif client.risk_level == 'high risk' %}<span style="color:red;">HIGH RISK</span>
-        {% else %}<span style="color:red; font-weight:bold;">ON HOLD</span>{% endif %}
+        {% elif client.risk_level == 'on hold' %}<span style="color:red; font-weight:bold;">ON HOLD</span>
+        {% else %}<span style="color:#95a5a6;">—</span>{% endif %}
     </p>
     <p><strong>Address:</strong> {{ client.apartment or '' }} {{ client.civic_number }} {{ client.street }}, {{ client.city }}, {{ client.province }} {{ client.postal_code }}</p>
     <p><strong>Created:</strong> {{ client.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
@@ -267,7 +301,7 @@
         <strong>IDs:</strong><br>
         {% if client.id1_number %}
             <small>
-                {{ client.id1_type or 'ID' }} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }}
+                {% if client.id1_type == 'pr_card' %}PR Card{% elif client.id1_type == 'driver_license' %}Driver License{% elif client.id1_type == 'insurance_card' %}Insurance Card{% elif client.id1_type == 'passport' %}Passport{% elif client.id1_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id1_number[:4] }}...{{ client.id1_number[-4:] }}
                 {% if client.id1_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=1) }}">file</a>)
                 {% endif %}
@@ -278,7 +312,7 @@
         {% endif %}
         {% if client.id2_number %}
             <small>
-                {{ client.id2_type or 'ID' }} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }}
+                {% if client.id2_type == 'pr_card' %}PR Card{% elif client.id2_type == 'driver_license' %}Driver License{% elif client.id2_type == 'insurance_card' %}Insurance Card{% elif client.id2_type == 'passport' %}Passport{% elif client.id2_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id2_number[:4] }}...{{ client.id2_number[-4:] }}
                 {% if client.id2_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=2) }}">file</a>)
                 {% endif %}
@@ -289,7 +323,7 @@
         {% endif %}
         {% if client.id3_number %}
             <small>
-                {{ client.id3_type or 'ID' }} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }}
+                {% if client.id3_type == 'pr_card' %}PR Card{% elif client.id3_type == 'driver_license' %}Driver License{% elif client.id3_type == 'insurance_card' %}Insurance Card{% elif client.id3_type == 'passport' %}Passport{% elif client.id3_type == 'other' %}Other{% else %}ID{% endif %} {{ client.id3_number[:4] }}...{{ client.id3_number[-4:] }}
                 {% if client.id3_filename %}
                     (<a href="{{ url_for('download_id_file', client_id=client.id, id_num=3) }}">file</a>)
                 {% endif %}

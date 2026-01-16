@@ -1,0 +1,27 @@
+/* === FORCE HORIZONTAL ACTIONS === */
+.actions-row,
+.d-flex.gap-2.flex-nowrap {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap !important;
+}
+
+.actions-row form,
+.d-flex.gap-2 form {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.actions-row .btn-sm,
+.d-flex.gap-2 .btn-sm,
+.actions-row .badge,
+.d-flex.gap-2 .badge {
+  height: 31px;
+  font-size: 0.775rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

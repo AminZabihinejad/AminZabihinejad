@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Account Balances - Piggy Bank{% endblock %}
+{% block content %}
+<h2>💰 Account Balances</h2>
+
+<div style="background:#e8f4fd; padding:20px; border-radius:8px;">
+    <h3>Exchange Balances by Currency</h3>
+
+    <!-- Search Box -->
+    <div style="margin-bottom:20px;">
+        <input type="text" id="currencySearch" placeholder="🔍 Search currencies by name or code..."
+               style="width:100%; padding:12px; border:2px solid #ddd; border-radius:8px; font-size:16px;
+                      box-sizing:border-box; transition: border-color 0.3s;" onkeyup="filterCurrencies()">
+    </div>
+
+    <style>
+    #currencySearch:focus {
+        border-color: #1976d2;
+        outline: none;
+        box-shadow: 0 0 5px rgba(25, 118, 210, 0.3);
+    }
+    </style>
+
+    <table style="width:100%; border-collapse: collapse; margin-top:20px;">
+        <thead>
+            <tr style="background:#f8f9fa;">
+                <th style="padding:15px; text-align:left; border-bottom:2px solid #dee2e6; font-weight:bold;">Currency Name</th>
+                <th style="padding:15px; text-align:center; border-bottom:2px solid #dee2e6; font-weight:bold;">Code</th>
+                <th style="padding:15px; text-align:center; border-bottom:2px solid #dee2e6; font-weight:bold;">Rate to CAD</th>
+                <th style="padding:15px; text-align:right; border-bottom:2px solid #dee2e6; font-weight:bold;">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for balance in account_balances %}
+            <tr style="border-bottom:1px solid #dee2e6;">
+                <td style="padding:15px; font-weight:500;">
+                    <img src="https://flagcdn.com/24x18/{{ balance.country }}.png" alt="{{ balance.name }} flag"
+                         style="width:24px; height:18px; margin-right:8px; vertical-align:middle; border-radius:2px;">
+                    {{ balance.name }}
+                </td>
+                <td style="padding:15px; text-align:center; font-weight:bold; color:#1976d2;">{{ balance.code }}</td>
+                <td style="padding:15px; text-align:center; font-weight:500; color:#666;">
+                    {% if balance.rate != 'N/A' %}
+                        {{ balance.rate }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
+                <td style="padding:15px; text-align:right; font-weight:bold; color:{% if balance.balance == 'NA' %}#6c757d{% else %}#28a745{% endif %};">
+                    {{ balance.balance }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top:20px; padding:15px; background:#f8f9fa; border-radius:5px;">
+        <strong>Note:</strong> Balances show your net position in each currency. Rates show "1 [currency] = X CAD" from live market data. "NA" indicates zero balance or unavailable rate.
+        <br><small id="searchResults" style="color:#666;"></small>
+        {% if last_update %}
+        <br><small style="color:#28a745;">Last updated: {{ last_update.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small>
+        {% else %}
+        <br><small style="color:#888;">Rates update automatically every 10 minutes.</small>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function filterCurrencies() {
+    const input = document.getElementById('currencySearch');
+    const filter = input.value.toUpperCase();
+    const table = document.querySelector('tbody');
+    const rows = table.getElementsByTagName('tr');
+    let visibleCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+        const cells = rows[i].getElementsByTagName('td');
+        if (cells.length >= 4) {
+            const currencyName = cells[0].textContent || '';
+            const currencyCode = cells[1].textContent || '';
+            const currencyRate = cells[2].textContent || '';
+            const fullText = currencyName + ' ' + currencyCode + ' ' + currencyRate;
+
+            if (fullText.toUpperCase().indexOf(filter) > -1) {
+                rows[i].style.display = '';
+                visibleCount++;
+            } else {
+                rows[i].style.display = 'none';
+            }
+        }
+    }
+
+    // Update search results count
+    const resultsElement = document.getElementById('searchResults');
+    if (filter.length > 0) {
+        resultsElement.textContent = `Showing ${visibleCount} of ${rows.length} currencies`;
+    } else {
+        resultsElement.textContent = '';
+    }
+}
+
+// Clear search on page load focus
+document.getElementById('currencySearch').addEventListener('focus', function() {
+    if (this.value === '') {
+        filterCurrencies(); // Reset to show all
+    }
+});
+</script>
+
+<div style="margin-top:20px; text-align:center;">
+    <a href="{{ url_for('dashboard') }}">🏠 Back to Overview</a>
+</div>
+{% endblock %}

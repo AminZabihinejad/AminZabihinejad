@@ -5,73 +5,128 @@
     <title>Receipt {{ tx.tx_ref }}</title>
     <style>
         @page { margin: 0; size: 80mm auto; }
-        body { font-family: 'Courier New', monospace; font-size: 10pt; margin: 0; padding: 5mm; width: 70mm; }
-        .receipt { width: 100%; }
-        .header { text-align: center; margin-bottom: 8mm; }
-        .header h1 { font-size: 14pt; margin: 0; font-weight: bold; }
-        .header p { margin: 2mm 0; font-size: 9pt; }
-        .divider { border-top: 1px dashed #000; margin: 5mm 0; }
-        .section { margin: 5mm 0; }
-        .label { font-weight: bold; display: inline-block; width: 22mm; }
-        .value { display: inline-block; }
-        .total { font-weight: bold; font-size: 11pt; }
-        .footer { text-align: center; margin-top: 10mm; font-size: 8pt; }
-        .actions { text-align: center; margin: 15mm 0; }
-        .btn { padding: 8px 16px; margin: 0 5px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-print Attack { background: #27ae60; color: white; }
-        .btn-pdf { background: #2196f3; color: white; }
-        .btn-jpg { background: #f39c12; color: white; }
-        @media print {
-            .actions { display: none; }
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 12pt;
+            line-height: 1.5;
+            margin: 3mm;
+            padding: 0;
+            width: 74mm;
+            max-width: 74mm;
         }
+        .receipt { width: 100%; }
+        .header { text-align: center; margin-bottom: 6mm; }
+        .header h1 { font-size: 16pt; margin: 0; font-weight: bold; }
+        .header p { margin: 2mm 0; font-size: 10pt; }
+        .divider { border-top: 1px dashed #000; margin: 5mm 0; }
+        .section { margin: 4mm 0; }
+        .label { font-weight: bold; display: inline-block; width: 24mm; }
+        .value { display: inline-block; font-weight: bold; }
+        .amount-from { color: #000; }
+        .amount-to { color: #000; }
+        .total { font-weight: bold; font-size: 14pt; }
+        .footer { text-align: center; margin-top: 8mm; font-size: 9pt; }
+        .actions { text-align: center; margin: 12mm 0; }
+        .btn {
+            padding: 8px 14px; margin: 0 4px; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold; font-size: 11pt; text-decoration: none;
+            display: inline-block; min-width: 60px;
+        }
+        .btn-print { background: #27ae60; color: white; }
+        .btn-pdf { background: #2196f3; color: white; }
+        .btn-png { background: #f39c12; color: white; }
+        .btn-telegram { background: #0088cc; color: white; }
+        .btn-telegram.sending { background: #f39c12; }
+        .btn-telegram.sent { background: #27ae60; }
+        .btn-email { background: #e74c3c; color: white; }
+        .btn-email.sending { background: #f39c12; }
+        .btn-email.sent { background: #27ae60; }
+        .btn:disabled { background: #ccc; color: #666; cursor: not-allowed; }
+        .telegram-info {
+            background: #f0f8ff; padding: 8px; border-radius: 4px; margin: 8px 0;
+            font-size: 9pt; text-align: center; border: 1px solid #ddd;
+        }
+        @media print {
+            .actions, .telegram-info { display: none !important; }
+            body { margin: 0; padding: 0; }
+        }
+        pre { margin: 0; padding: 0; white-space: pre; font-family: inherit; }
     </style>
 </head>
 <body>
-
 <div class="receipt">
-
-    <!-- HEADER -->
     <div class="header">
         <h1>{{ exchange_name }}</h1>
         <p>{{ tx.date.strftime('%Y-%m-%d %H:%M') }}</p>
         <p>Receipt #: {{ tx.tx_ref }}</p>
     </div>
-
     <div class="divider"></div>
-
-    <!-- CLIENT INFO -->
     <div class="section">
         <div><span class="label">Client:</span> <span class="value">{{ client.first_name }} {{ client.last_name }}</span></div>
         <div><span class="label">Phone:</span> <span class="value">{{ client.phone }}</span></div>
-        <div><span class="label">Address:</span> <span class="value">{{ client.civic_number }} {{ client.street }}, {{ client.city }}</span></div>
+        {% if client2 %}
+        <div><span class="label" style="color:#9c27b0;">Second Client:</span> <span class="value" style="color:#9c27b0;">{{ client2.first_name }} {{ client2.last_name }}</span></div>
+        <div><span class="label" style="color:#666;">Phone:</span> <span class="value" style="color:#666;">{{ client2.phone }}</span></div>
+        {% endif %}
     </div>
-
     <div class="divider"></div>
-
-    <!-- TRANSACTION -->
     <div class="section">
-        <div><span class="label">From:</span> <span class="value">{{ "%.2f"|format(tx.from_amount) }} {{ tx.from_currency }}</span></div>
-        <div><span class="label">To:</span> <span class="value">{{ "%.2f"|format(tx.to_amount) }} {{ tx.to_currency }}</span></div>
-        <div><span class="label">Rate:</span> <span class="value">1 {{ tx.from_currency }} = {{ "%.4f"|format(tx.exchange_rate) }} {{ tx.to_currency }}</span></div>
+        <div><span class="label">From:</span> <span class="value amount-from">{{ "%.2f"|format(tx.from_amount) }} {{ tx.from_currency }}</span></div>
+        <div><span class="label">To:</span> <span class="value amount-to">{{ "%.2f"|format(tx.to_amount) }} {{ tx.to_currency }}</span></div>
+
+        <!-- RATE 1: FROM → CAD (FROM DB) -->
+        <div><span class="label">Rate 1:</span> 
+            <span class="value">
+                {% if tx.from_currency == 'CAD' %}
+                    1 CAD = 1.000000 CAD
+                {% else %}
+                    1 {{ tx.from_currency }} = {{ "%.6f"|format(tx.rate_from_cad) }} CAD
+                {% endif %}
+            </span>
+        </div>
+
+        <!-- RATE 2: TO → CAD (FROM DB) -->
+        <div><span class="label">Rate 2:</span> 
+            <span class="value">
+                {% if tx.to_currency == 'CAD' %}
+                    1 CAD = 1.000000 CAD
+                {% else %}
+                    1 {{ tx.to_currency }} = {{ "%.6f"|format(tx.rate_to_cad) }} CAD
+                {% endif %}
+            </span>
+        </div>
     </div>
-
     <div class="divider"></div>
-
-    <!-- FEE -->
     <div class="section">
         <div><span class="label">Flat Fee:</span> <span class="value">${{ "%.2f"|format(flat_fee_cad) }} CAD</span></div>
-        <div><span class="label">Rate Fee:</span> <span class="value">{{ current_fee }}% = ${{ "%.2f"|format(tx.from_amount * fee_percentage) }}</span></div>
+        <div><span class="label">Rate Fee:</span> <span class="value">${{ "%.2f"|format(profit_cad - flat_fee_cad) }} CAD</span></div>
         <div class="total"><span class="label">Total Fee:</span> <span class="value">${{ "%.2f"|format(profit_cad) }} CAD</span></div>
     </div>
-
-    <div class="divider"></div>
-
+    <div class="divider"></으나
     <div class="footer">
         <p>Thank you for your business!</p>
         <p>Powered by MoneyExchange Pro</p>
     </div>
-
 </div>
+
+<!-- TELEGRAM INFO BOX -->
+{% if not is_download and (not client.telegram_id or client.telegram_id|trim == '') %}
+<div class="telegram-info">
+    <strong>Want receipt on Telegram?</strong><br>
+    1. Open Telegram → Search <strong>@userinfobot</strong><br>
+    2. Tap Start → Copy your <code>Id</code><br>
+    3. Tell us → We’ll send next time!
+</div>
+{% endif %}
+
+<!-- EMAIL INFO BOX -->
+{% if not is_download and (not client.email or client.email|trim == '') %}
+<div class="telegram-info" style="background: #fff0f0; border: 1px solid #f5c6cb;">
+    <strong>Want receipt by Email?</strong><br>
+    Please update your email address in your profile<br>
+    so we can send receipts directly to you!
+</div>
+{% endif %}
 
 <!-- ACTION BUTTONS -->
 {% if not is_download %}
@@ -79,8 +134,90 @@
     <button onclick="window.print()" class="btn btn-print">Print</button>
     <a href="{{ url_for('download_pdf', tx_id=tx.id) }}" class="btn btn-pdf">PDF</a>
     <a href="{{ url_for('download_png', tx_id=tx.id) }}" class="btn btn-png">PNG</a>
+    {% if client.telegram_id and client.telegram_id|trim|length > 0 and client.telegram_id is numeric %}
+        <button class="btn btn-telegram" id="telegram-btn-{{ tx.id }}" onclick="sendToTelegram({{ tx.id }})">
+            Send to Telegram
+        </button>
+    {% else %}
+        <button class="btn" disabled>Telegram ID missing</button>
+    {% endif %}
+    {% if client.email %}
+        <button class="btn btn-email" id="email-btn-{{ tx.id }}" onclick="sendToEmail({{ tx.id }})">
+            Send to Email
+        </button>
+    {% else %}
+        <button class="btn" disabled>Email missing</button>
+    {% endif %}
 </div>
 {% endif %}
 
+<script>
+function sendToTelegram(txId) {
+    const btn = document.getElementById('telegram-btn-' + txId);
+    if (!btn || btn.disabled) return;
+    btn.innerHTML = 'Sending...';
+    btn.disabled = true;
+    btn.classList.add('sending');
+    fetch(`/send_telegram_receipt/${txId}`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'sent') {
+            btn.innerHTML = 'Sent!';
+            btn.classList.remove('sending');
+            btn.classList.add('sent');
+        } else {
+            throw new Error();
+        }
+    })
+    .catch(err => {
+        btn.innerHTML = 'Failed';
+        btn.style.background = '#e74c3c';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = 'Send to Telegram';
+            btn.style.background = '#0088cc';
+            btn.classList.remove('sending');
+        }, 3000);
+    });
+}
+
+function sendToEmail(txId) {
+    const btn = document.getElementById('email-btn-' + txId);
+    if (!btn || btn.disabled) return;
+    btn.innerHTML = 'Sending...';
+    btn.disabled = true;
+    btn.classList.add('sending');
+    fetch(`/send_email_receipt/${txId}`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'sent') {
+            btn.innerHTML = 'Sent!';
+            btn.classList.remove('sending');
+            btn.classList.add('sent');
+        } else {
+            throw new Error();
+        }
+    })
+    .catch(err => {
+        btn.innerHTML = 'Failed';
+        btn.style.background = '#e74c3c';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = 'Send to Email';
+            btn.style.background = '#e74c3c';
+            btn.classList.remove('sending');
+        }, 3000);
+    });
+}
+</script>
+
+<!-- AUTO-CUT FOR THERMAL PRINTER -->
+<div style="page-break-after: always;"></div>
 </body>
 </html>

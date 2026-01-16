@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}SaaS Clients{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>SaaS Clients</h1>
+    <p class="lead">Manage client subscriptions.</p>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Status</th>
+                    <th>Exchange</th>
+                    <th>Client</th>
+                    <th>Email</th>
+                    <th>Package</th>
+                    <th>Users</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tenants %}
+                <tr class="{% if not t.is_active %}table-danger{% endif %}">
+                    <td>
+                        <span class="badge {% if t.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ 'Active' if t.is_active else 'Disabled' }}
+                        </span>
+                    </td>
+                    <td><strong>{{ t.name }}</strong></td>
+                    <td>{{ t.client_name }}</td>
+                    <td>{{ t.client_email }}</td>
+                    <td><strong>{{ t.max_users }}-User</strong></td>
+                    <td>{{ t.users|length }} / {{ t.max_users }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('toggle_tenant', tenant_id=t.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm {% if t.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                                {{ 'Disable' if t.is_active else 'Enable' }}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="text-center mt-4">
+        <a href="{{ url_for('profile') }}" class="btn btn-outline-primary">Back to Profile</a>
+    </div>
+</div>
+{% endblock %}

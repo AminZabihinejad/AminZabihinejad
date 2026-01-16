@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Download Backups{% endblock %}
+{% block content %}
+<h2>📁 Download Backup Files</h2>
+<p>Download encrypted backup files to your local computer. All backups are encrypted for security.</p>
+
+<div style="background:#fff3cd; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <strong>⚠️ Security Notice:</strong> Backup files are encrypted. Keep them secure and don't share the decryption key.
+</div>
+
+<div style="background:#ffeaea; border-left:5px solid #e74c3c; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <strong>🔄 Database Restore:</strong> Click "Restore DB" to prepare database restoration from a backup. The system will decrypt the backup and prepare it for installation. <strong>You must restart the application to complete the restoration.</strong>
+</div>
+
+{% if restoration_pending %}
+<div style="background:#fff3cd; border-left:5px solid #ffc107; padding:15px; border-radius:8px; margin-bottom:20px;">
+    <strong>⏳ Restoration Pending:</strong> A database restoration is prepared and will complete when you restart the application. The current database will be backed up automatically.
+</div>
+{% endif %}
+
+<!-- CLIENT-ORGANIZED BACKUPS -->
+{% for client in client_backups %}
+<div style="background:#f8f9fa; padding:20px; border-radius:8px; margin-bottom:25px;">
+    <h3 style="margin-top:0; color:#2c3e50;">
+        🏢 {{ client.client_name }}
+        <small style="color:#7f8c8d; font-weight:normal;">({{ client.tenant_name }})</small>
+    </h3>
+
+    <!-- DATABASE BACKUPS FOR THIS CLIENT -->
+    {% if client.database_backups %}
+    <h4 style="color:#27ae60; margin-bottom:10px;">🗄️ Database Backups</h4>
+    <div style="overflow-x:auto; margin-bottom:20px;">
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <thead>
+                <tr style="background:#e8f5e8;">
+                    <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;">Filename</th>
+                    <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;">Date Created</th>
+                    <th style="padding:10px; text-align:right; border-bottom:2px solid #ddd;">Size</th>
+                    <th style="padding:10px; text-align:center; border-bottom:2px solid #ddd;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backup in client.database_backups %}
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:10px; font-weight:bold; font-family:monospace; font-size:12px;">{{ backup.filename }}</td>
+                    <td style="padding:10px;">{{ backup.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td style="padding:10px; text-align:right;">
+                        {% if backup.size > 1024*1024 %}
+                            {{ "%.1f"|format(backup.size / (1024*1024)) }} MB
+                        {% elif backup.size > 1024 %}
+                            {{ "%.1f"|format(backup.size / 1024) }} KB
+                        {% else %}
+                            {{ backup.size }} bytes
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px; text-align:center;">
+                        <a href="{{ url_for('download_backup_file', filename=backup.filename) }}"
+                           style="background:#27ae60; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-weight:bold; font-size:12px; margin-right:5px;"
+                           onclick="return confirm('Download {{ backup.filename }}?')">
+                            📥 Download
+                        </a>
+                        <form method="POST" action="{{ url_for('restore_database', filename=backup.filename) }}" style="display:inline;">
+                            <button type="submit"
+                                    style="background:#e74c3c; color:white; padding:6px 12px; border:none; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;"
+                                    onclick="return confirm('⚠️ WARNING: This will REPLACE the current database with this backup!\\n\\nAre you sure you want to restore from {{ backup.filename }}?\\n\\nThe application will need to be restarted after restoration.')">
+                                🔄 Restore DB
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- UPLOADS BACKUPS FOR THIS CLIENT -->
+    {% if client.uploads_backups %}
+    <h4 style="color:#3498db; margin-bottom:10px;">📎 Uploads Backups</h4>
+    <div style="overflow-x:auto; margin-bottom:10px;">
+        <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <thead>
+                <tr style="background:#e8f4fd;">
+                    <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;">Filename</th>
+                    <th style="padding:10px; text-align:left; border-bottom:2px solid #ddd;">Date Created</th>
+                    <th style="padding:10px; text-align:right; border-bottom:2px solid #ddd;">Size</th>
+                    <th style="padding:10px; text-align:center; border-bottom:2px solid #ddd;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backup in client.uploads_backups %}
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:10px; font-weight:bold; font-family:monospace; font-size:12px;">{{ backup.filename }}</td>
+                    <td style="padding:10px;">{{ backup.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td style="padding:10px; text-align:right;">
+                        {% if backup.size > 1024*1024 %}
+                            {{ "%.1f"|format(backup.size / (1024*1024)) }} MB
+                        {% elif backup.size > 1024 %}
+                            {{ "%.1f"|format(backup.size / 1024) }} KB
+                        {% else %}
+                            {{ backup.size }} bytes
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px; text-align:center;">
+                        <a href="{{ url_for('download_backup_file', filename=backup.filename) }}"
+                           style="background:#3498db; color:white; padding:6px 12px; text-decoration:none; border-radius:4px; font-weight:bold; font-size:12px;"
+                           onclick="return confirm('Download {{ backup.filename }}?')">
+                            📥 Download
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- NO BACKUPS MESSAGE -->
+    {% if not client.database_backups and not client.uploads_backups %}
+    <p style="color:#666; font-style:italic; margin:10px 0;">No backup files found for this client.</p>
+    {% endif %}
+</div>
+{% endfor %}
+
+<!-- NO CLIENTS MESSAGE -->
+{% if not client_backups %}
+<div style="background:#fff3cd; padding:20px; border-radius:8px; text-align:center;">
+    <h4>No Backup Files Found</h4>
+    <p>No clients or backup files were found in the system.</p>
+</div>
+{% endif %}
+
+<!-- BACKUP STATUS -->
+<div style="background:#e8f5e8; padding:15px; border-radius:8px; margin-top:20px;">
+    <h4>📊 Backup Status</h4>
+    <p><strong>Current Backup Mode:</strong> LOCAL</p>
+    <p><strong>Auto Backup:</strong> Every 30 minutes</p>
+    <p><strong>Organization:</strong> Grouped by client for easy management</p>
+    <p><strong>Files Location:</strong> <code>backups/</code> (relative to app directory)</p>
+    <p><strong>Encryption:</strong> All backups are encrypted for security</p>
+</div>
+
+<!-- MANUAL BACKUP BUTTON -->
+<div style="background:#f8f9fa; padding:15px; border-radius:8px; margin-top:20px; text-align:center;">
+    <a href="{{ url_for('backup_now') }}"
+       style="background:#e74c3c; color:white; padding:12px 24px; text-decoration:none; border-radius:4px; font-weight:bold; font-size:16px;"
+       onclick="return confirm('Create a new backup now?')">
+        🔄 Create New Backup
+    </a>
+    <p style="margin-top:10px; color:#666; font-size:14px;">
+        This will create fresh backups and save them to the server
+    </p>
+</div>
+{% endblock %}

@@ -22,7 +22,13 @@
     <div style="background:#f9f9f9; padding:20px; border-radius:8px;">
         <h3>Account Information</h3>
         <p><strong>Username:</strong> {{ user.username }}</p>
-        <p><strong>Role:</strong> {% if user.is_admin %}Admin{% else %}User{% endif %}</p>
+        <p><strong>Role:</strong> 
+            {% if is_super_admin %}Super Admin
+            {% elif user.is_admin %}Admin
+            {% else %}User
+            {% endif %}
+        </p>
+        <p><strong>Tenant:</strong> {{ tenant.name }}</p>
         <p><strong>Member Since:</strong> {{ user.created_at.strftime('%Y-%m-%d') }}</p>
         <p><strong>Total Transactions:</strong> {{ total_transactions }}</p>
         <p><strong>Total Clients:</strong> {{ total_clients }}</p>
@@ -30,8 +36,8 @@
 
     <!-- USER PACKAGE -->
     <div style="background:#e8f7ff; padding:20px; border-radius:8px;">
-        <h3>5-User Package</h3>
-        <p><strong>Users Used:</strong> {{ total_users }} / {{ max_users }}</p>
+        <h3>{{ tenant.max_users }}-User Package</h3>
+        <p><strong>Users Used:</strong> {{ total_users }} / {{ tenant.max_users }}</p>
         <div style="background:#d5f4e6; padding:10px; border-radius:6px; margin-top:10px; font-size:14px;">
             {% for u in users %}
             <div style="margin:5px 0; padding:5px; background:white; border-radius:4px;">
@@ -48,13 +54,46 @@
 
 <!-- FEE DISPLAY -->
 <div style="margin-top:20px; background:#fff3cd; padding:15px; border-radius:8px; text-align:center;">
-    <strong>Current Fees:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD 
-    | <strong>Per $200 CAD:</strong> ${{ "%.2f"|format((200 * (current_fee / 100)) + current_flat_fee) }}
+    <strong>Current Fees:</strong> {{ current_fee }}% + ${{ current_flat_fee }} CAD</div>
+
+<!-- SUPER ADMIN: REGISTER NEW CLIENT -->
+{% if is_super_admin %}
+<div style="margin-top:30px; background:#e8f5e9; padding:25px; border-radius:10px; border:2px solid #27ae60; text-align:center;">
+    <h3 style="color:#27ae60; margin-top:0;">Register New Software Client</h3>
+    <p>Fill in client details and select their package.</p>
+    
+    <form method="POST" action="{{ url_for('create_tenant') }}" style="max-width:700px; margin:0 auto;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:15px;">
+            <input type="text" name="exchange_name" placeholder="Exchange Name" required>
+            <input type="email" name="client_email" placeholder="Client Email" required>
+            <input type="text" name="client_name" placeholder="Full Name" required>
+            <input type="tel" name="client_phone" placeholder="Phone (optional)">
+        </div>
+        
+        <div style="margin-bottom:15px;">
+            <label style="font-weight:bold; margin-right:10px;">Package:</label>
+            <select name="package">
+                <option value="1">Single User</option>
+                <option value="5" selected>5-User Package</option>
+            </select>
+        </div>
+
+        <button type="submit" style="background:#27ae60; color:white; padding:12px 30px; font-size:16px; border:none; border-radius:6px;">
+            Register & Send Email
+        </button>
+    </form>
+
+    <div style="margin-top:20px;">
+        <a href="{{ url_for('manage_tenants') }}" style="color:#27ae60; font-weight:bold; text-decoration:underline;">
+            View All Clients
+        </a>
+    </div>
 </div>
+{% endif %}
 
 <!-- NAVIGATION -->
 <div style="margin-top:30px; text-align:center;">
-    <a href="{{ url_for('index') }}" style="margin-right:10px; font-size:16px;">Overview</a>
+    <a href="{{ url_for('dashboard') }}" style="margin-right:10px; font-size:16px;">Overview</a>
     <a href="{{ url_for('transactions') }}" style="margin-right:10px; font-size:16px;">Transactions</a>
     <a href="{{ url_for('logout') }}" style="background:#e74c3c; color:white; padding:10px 20px; border-radius:4px; text-decoration:none; font-size:16px;">LOGOUT</a>
 </div>
